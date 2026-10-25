@@ -38,7 +38,7 @@
   <header class="border-b border-white/60 dark:border-white/5 bg-white/70 dark:bg-slate-900/60 backdrop-blur">
     <div class="relative mx-auto w-full max-w-7xl px-4 py-2 sm:py-3 flex items-center justify-between">
       <h1 class="text-2xl font-bold tracking-tight shrink-0">Optivolt <span
-          class="text-xl font-normal text-slate-400 dark:text-slate-500">DESS</span></h1>
+          class="text-xl font-normal text-slate-400 dark:text-slate-500">DESS</span> <span id="app-version" class="text-sm font-normal text-slate-400 dark:text-slate-500" style="position: relative; top: -0.5em;" aria-label="Version 1.0">1.0</span></h1>
       <div class="flex items-center gap-2">
         <nav role="tablist" class="sm:absolute sm:left-1/2 sm:-translate-x-1/2">
           <div class="flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-800">
@@ -107,12 +107,51 @@
   <!-- Main -->
   <main id="panel-optimizer" role="tabpanel" aria-labelledby="tab-optimizer"
     class="mx-auto w-full max-w-7xl px-4 py-8 grid gap-6 lg:grid-cols-3">
+    <!-- Total plan costs — full width -->
+    <section class="lg:col-span-3 min-w-0">
+      <div class="card">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="sidebar-label">PLAN RESULT</h3>
+        </div>
+        <div class="plan-result-grid grid grid-cols-4 gap-2">
+          <div class="total-plan-cost-tile plan-strategy-tile">
+            <div class="plan-strategy-main">
+              <div class="stat-label mb-2">STRATEGY</div>
+              <div id="plan-strategy-value" class="total-plan-cost-value">—</div>
+            </div>
+            <button id="plan-strategy-toggle" class="plan-strategy-toggle" type="button" aria-label="Change strategy" title="Change strategy">⇅</button>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">REVENUE</div>
+            <div id="plan-revenue-euro" class="total-plan-cost-value" title="Export revenue minus import and battery wear costs">—</div>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">IMPORT COST</div>
+            <div id="plan-import-cost-euro" class="total-plan-cost-value">—</div>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">EXPORT REVENUE</div>
+            <div id="plan-export-revenue-euro" class="total-plan-cost-value">—</div>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">BATTERY WEAR COST</div>
+            <div id="plan-battery-wear-euro" class="total-plan-cost-value">—</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Power flows — full width -->
     <section class="lg:col-span-3 min-w-0">
       <div class="card">
-        <div class="mb-3 flex items-center justify-between gap-4">
+        <div class="power-flows-header mb-3 flex items-center justify-between gap-4">
           <h3 class="sidebar-label">Power flows</h3>
-          <div id="optimizer-view-toggles" class="flex items-center gap-2"></div>
+          <div class="power-flows-controls flex items-center gap-3">
+            <div class="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-800" role="group" aria-label="Revenue chart option">
+              <button id="show-net-revenue" type="button" aria-pressed="false" title="Plot cumulative revenue after import and battery wear; negative values are costs">Revenue</button>
+            </div>
+            <div id="optimizer-view-toggles" class="flex items-center gap-2"></div>
+          </div>
         </div>
         <div class="h-80 w-full chart-wrap" data-chart-empty="Run the optimizer to see results">
           <canvas id="flows" class="h-full w-full"></canvas>
@@ -179,15 +218,25 @@
           <!-- Run options as toggles -->
           <div class="mt-4 pt-4 border-t border-slate-100 dark:border-white/5 flex flex-col gap-3">
             <label class="toggle">
-              <input id="update-data-before-run" type="checkbox">
+              <input id="update-data-before-run" type="checkbox" data-settings-input data-no-autosolve>
               <span class="toggle-knob"></span>
               <span class="text-sm text-slate-600 dark:text-slate-400">Update data before recompute</span>
             </label>
             <label class="toggle">
-              <input id="push-to-victron" type="checkbox">
+              <input id="push-to-victron" type="checkbox" data-settings-input data-no-autosolve>
               <span class="toggle-knob"></span>
               <span class="text-sm text-slate-600 dark:text-slate-400">Push schedule to Victron</span>
             </label>
+          </div>
+          <div class="mt-4 rounded-lg border border-slate-200 p-3 dark:border-white/10">
+            <label for="live-block-guard-mode" class="mb-1 block text-sm font-medium text-ink dark:text-slate-100">Live block guard</label>
+            <select id="live-block-guard-mode" data-settings-input data-no-autosolve class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-slate-800 dark:text-slate-100">
+              <option value="off">Off</option>
+              <option value="monitor">Monitor only</option>
+              <option value="automatic">Automatic adjustment</option>
+            </select>
+            <p id="live-block-guard-status" class="mt-2 text-xs text-slate-500 dark:text-slate-400" aria-live="polite">Status unavailable</p>
+            <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">Helps prevent intermediate SoC targets from interrupting consecutive high-power charging or discharging slots. The guard adjusts SoC targets and does not set the charging or discharging power. It checks every minute. Monitor only shows proposals; automatic changes require “Push schedule to Victron” to be on.</p>
           </div>
 
           <!-- Recompute -->
@@ -243,10 +292,6 @@
               <div class="px-3 py-2.5 border-r border-slate-100 dark:border-white/5">
                 <div class="stat-label mb-0.5">Avg. import price</div>
                 <div id="avg-import-cent" class="stat-value">—</div>
-              </div>
-              <div class="px-3 py-2.5">
-                <div class="stat-label mb-0.5">Net cost</div>
-                <div id="net-cost-cent" class="stat-value">—</div>
               </div>
             </div>
             <div class="summary-block border-t border-slate-100 dark:border-white/5">
@@ -307,7 +352,13 @@
       </div>
 
       <div class="card">
-        <h3 class="mb-3 sidebar-label">Energy prices</h3>
+        <div class="mb-3 flex items-center justify-between gap-3">
+          <h3 class="sidebar-label">Energy prices</h3>
+          <div id="forecast-accuracy" class="forecast-accuracy" role="status" aria-live="polite" title="Vergelijking van volledige day-ahead leveringsdagen in de laatste 30 dagen">
+            <span class="forecast-accuracy-value">—</span>
+            <span class="forecast-accuracy-label">DA reliability · 30d</span>
+          </div>
+        </div>
         <div class="h-56 w-full chart-wrap" data-chart-empty="Run the optimizer to see results">
           <canvas id="prices" class="h-full w-full"></canvas>
         </div>
@@ -807,6 +858,54 @@
               <input id="price-forecast-url" type="url" placeholder="https://…/forecast.json" class="form-input" data-settings-input />
             </label>
           </div>
+        </section>
+
+        <!-- Prices Card -->
+        <section class="card">
+          <div class="mb-4">
+            <h2 class="sidebar-label">PRICES</h2>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-sm">VAT (%)
+              <input id="price-vat-percent" type="number" min="0" step="0.01" value="0.00" class="form-input" data-settings-input />
+            </label>
+            <label class="text-sm">Energy tax (excl. VAT)
+              <input id="price-energy-tax" type="number" min="0" step="0.00001" value="0.00000" class="form-input" data-settings-input />
+            </label>
+            <label class="text-sm">Buy cost/kWh (excl. VAT)
+              <input id="price-buy-cost" type="number" min="0" step="0.00001" value="0.00000" class="form-input" data-settings-input />
+            </label>
+            <label class="text-sm">Sell cost/kWh (excl. VAT)
+              <input id="price-sell-cost" type="number" min="0" step="0.00001" value="0.00000" class="form-input" data-settings-input />
+            </label>
+            <label class="toggle col-span-2 mt-2">
+              <input id="net-metering" type="checkbox" data-settings-input>
+              <span class="toggle-knob"></span>
+              <span class="text-sm">Net metering (Saldering)</span>
+            </label>
+          </div>
+        </section>
+
+        <!-- Strategy Card -->
+        <section class="card">
+          <div class="mb-4">
+            <h2 class="sidebar-label">STRATEGY</h2>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-sm col-span-2">Strategy
+              <select id="strategy-mode" class="form-select" data-settings-input>
+                <option value="aggressive">Agressive</option>
+                <option value="green">Green</option>
+              </select>
+            </label>
+            <label class="text-sm">Minimum Sell Price
+              <input id="strategy-min-sell-price" type="number" min="0" step="0.00001" value="0.30000" class="form-input" data-settings-input />
+            </label>
+            <label class="text-sm">Maximum Buy Price
+              <input id="strategy-max-buy-price" type="number" min="0" step="0.00001" value="0.15000" class="form-input" data-settings-input />
+            </label>
+          </div>
+          <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Thresholds use all-in prices in €/kWh. Green only charges the battery from the grid at or below Maximum Buy Price and exports battery energy at or above Minimum Sell Price. PV surplus may always be exported.</p>
         </section>
 
         <!-- Home Assistant Settings Card -->

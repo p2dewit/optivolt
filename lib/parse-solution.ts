@@ -130,6 +130,8 @@ export function parseSolution(result: HighsSolution, cfg: SolverConfig, opts: Pa
     const evW = g2ev[t] + pv2ev[t] + b2ev[t];
     const importCost = imp * slotHours / 1000 * cfg.importPrice[t];
     const exportCost = exp * slotHours / 1000 * cfg.exportPrice[t];
+    const batteryThroughputW = g2b[t] + pv2b[t] + b2l[t] + b2g[t] + b2ev[t];
+    const batteryWearCost = 0.5 * cfg.batteryCost_cent_per_kWh * batteryThroughputW * slotHours / 1000;
     const evTargetWh = evTargetWhBySlot.get(t);
 
     rows.push({
@@ -153,6 +155,7 @@ export function parseSolution(result: HighsSolution, cfg: SolverConfig, opts: Pa
       exp: round(exp),
       importCost_cents: round(importCost),
       exportCost_cents: round(exportCost),
+      batteryWearCost_cents: round(batteryWearCost),
       soc_Wh: round(soc[t]),
       soc: round(soc[t]),
       soc_percent: (soc[t] / cap) * 100,

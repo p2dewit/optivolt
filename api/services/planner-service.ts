@@ -22,6 +22,7 @@ import type { PlanRowWithDess, Data, Settings } from '../types.ts';
 
 // How many slots we push into Dynamic ESS
 const DESS_SLOTS = 4;
+let pushedPlanComputedAtMs: number | null = null;
 // Upper bound on a single HiGHS solve, in seconds. Current ~100-slot MILPs
 // solve well under a second; this only kicks in when something degenerates
 // (or once longer horizons multiply the binary count).
@@ -325,6 +326,11 @@ export async function computePlan({ updateData = false } = {}): Promise<ComputeP
 
 export async function writePlanToVictron(rows: PlanRowWithDess[], stepMin: number): Promise<void> {
   await setDynamicEssSchedule(rows, Math.min(DESS_SLOTS, rows.length), stepMin * 60);
+  pushedPlanComputedAtMs = lastPlan?.computedAtMs ?? null;
+}
+
+export function isLastPlanPushedToVictron(): boolean {
+  return lastPlan != null && pushedPlanComputedAtMs === lastPlan.computedAtMs;
 }
 
 export async function planAndMaybeWrite({

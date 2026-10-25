@@ -6,6 +6,7 @@ import { loadData, saveData } from './data-store.ts';
 import { readVictronSocPercent, readVictronSocLimits } from './mqtt-service.ts';
 import type { Data } from '../types.ts';
 import { getVrmCredentials } from '../env.ts';
+import { reconcileForecastAccuracy } from './forecast-accuracy-service.ts';
 
 function createClientFromEnv(): VRMClient {
   return new VRMClient(getVrmCredentials());
@@ -134,6 +135,8 @@ export async function refreshSeriesFromVrmAndPersist(): Promise<void> {
       step: prices.step_minutes,
       values: prices.exportPrice_cents_per_kwh,
     };
+    delete baseData.importPriceBase;
+    delete baseData.exportPriceBase;
   }
 
   const soc = shouldFetchSoc && socPercent !== null
@@ -151,6 +154,10 @@ export async function refreshSeriesFromVrmAndPersist(): Promise<void> {
     soc,
   };
 
+  if (shouldFetchPrices && prices) {
+    try { await reconcileForecastAccuracy(baseData, nextData); }
+    catch (accuracyError) { console.error('[forecast-accuracy] reconciliation failed:', accuracyError instanceof Error ? accuracyError.message : String(accuracyError)); }
+  }
   await saveData(nextData);
 
   // Optionally keep stepSize_m in settings in sync

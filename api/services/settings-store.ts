@@ -18,7 +18,9 @@ const NUMERIC_FIELDS: (keyof Settings)[] = [
   'evMinChargeCurrent_A', 'evMaxChargeCurrent_A', 'evBatteryCapacity_kWh',
   'evChargeEfficiency_percent', 'evMaxSoc_percent', 'evSocValue_cents_per_kWh',
   'evTripSocBuffer_percent',
-  'extendedHorizonDays',
+  'extendedHorizonDays', 'energyTax_eur_per_kWh', 'buyCost_eur_per_kWh',
+  'sellCost_eur_per_kWh', 'vat_percent',
+  'minimumSellPrice_eur_per_kWh', 'maximumBuyPrice_eur_per_kWh',
 ];
 
 // Strictly positive: zero step size, capacities, hold hours, or charge currents are unusable.
@@ -31,6 +33,7 @@ const POSITIVE_FIELDS: (keyof Settings)[] = [
 const NON_NEGATIVE_FIELDS: (keyof Settings)[] = [
   'maxChargePower_W', 'maxDischargePower_W', 'maxGridImport_W', 'maxGridExport_W',
   'batteryCost_cent_per_kWh', 'idleDrain_W',
+  'minimumSellPrice_eur_per_kWh', 'maximumBuyPrice_eur_per_kWh',
 ];
 
 // Efficiencies divide LP cost coefficients: zero would produce infinite costs.
@@ -39,7 +42,7 @@ const EFFICIENCY_FIELDS: (keyof Settings)[] = [
 ];
 
 const BOOLEAN_FIELDS: (keyof Settings)[] = [
-  'blockFeedInOnNegativePrices', 'rebalanceEnabled', 'evEnabled',
+  'blockFeedInOnNegativePrices', 'rebalanceEnabled', 'evEnabled', 'netMetering', 'pushToVictronEnabled', 'updateDataBeforeRun', 'tableShowKwh', 'tableShowDess',
 ];
 
 const STRING_FIELDS: (keyof Settings)[] = ['haUrl', 'haToken', 'evSocSensor', 'evPlugSensor'];
@@ -94,6 +97,24 @@ function validateSettings(s: Settings): Settings {
     }
   }
 
+  if (s.chartViewRange !== null && !['standard', 'full'].includes(s.chartViewRange)) {
+    throw new SettingsValidationError('Invalid setting: chartViewRange');
+  }
+  if (s.chartFlowsResolution !== null && !['auto', '15', '60'].includes(s.chartFlowsResolution)) {
+    throw new SettingsValidationError('Invalid setting: chartFlowsResolution');
+  }
+  if (s.chartShowNetRevenue !== null && typeof s.chartShowNetRevenue !== 'boolean') {
+    throw new SettingsValidationError('Invalid setting: chartShowNetRevenue must be a boolean or null');
+  }
+
+  if (!['off', 'monitor', 'automatic'].includes(s.liveBlockGuardMode)) {
+    throw new SettingsValidationError('Invalid setting: liveBlockGuardMode must be off, monitor, or automatic');
+  }
+
+  if (s.strategy !== 'aggressive' && s.strategy !== 'green') {
+    throw new SettingsValidationError('Invalid setting: strategy must be aggressive or green');
+  }
+
   if (!TERMINAL_SOC_VALUATIONS.includes(s.terminalSocValuation)) {
     throw new SettingsValidationError(
       `Invalid setting: terminalSocValuation must be one of ${TERMINAL_SOC_VALUATIONS.join(', ')}`,
@@ -136,6 +157,10 @@ function validateSettings(s: Settings): Settings {
 
   // Whole days only; 6 extra days is the practical limit of the price forecast feed.
   s.extendedHorizonDays = Math.max(0, Math.min(6, Math.round(s.extendedHorizonDays)));
+  s.energyTax_eur_per_kWh = Math.round(s.energyTax_eur_per_kWh * 100000) / 100000;
+  s.buyCost_eur_per_kWh = Math.round(s.buyCost_eur_per_kWh * 100000) / 100000;
+  s.sellCost_eur_per_kWh = Math.round(s.sellCost_eur_per_kWh * 100000) / 100000;
+  s.vat_percent = Math.round(s.vat_percent * 100) / 100;
 
   if (typeof s.priceForecastUrl !== 'string') {
     s.priceForecastUrl = '';
@@ -184,8 +209,11 @@ export async function loadSettings(): Promise<Settings> {
   }
 }
 
-// Serialized form of the last save; see the matching note in data-store.ts.
-let lastSavedJson: string | undefined;
+// Display preferences do not alter the optimizer's inputs or invalidate its plan.
+function solverSettingsJson(settings: Settings): string {
+  const { tableShowKwh, tableShowDess, chartViewRange, chartFlowsResolution, chartShowNetRevenue, ...inputs } = settings;
+  return JSON.stringify(inputs);
+}
 
 /**
  * Persist settings to DATA_DIR/settings.json (pretty-printed).
@@ -193,12 +221,9 @@ let lastSavedJson: string | undefined;
  */
 export async function saveSettings(settings: Settings): Promise<void> {
   const validated = validateSettings({ ...settings, schemaVersion: Math.max(settings.schemaVersion ?? 0, SETTINGS_SCHEMA_VERSION) });
-  const json = JSON.stringify(validated);
-  if (json !== lastSavedJson) {
-    lastSavedJson = json;
-    bumpSolverInputsVersion();
-  }
+  const inputsChanged = solverSettingsJson(validated) !== solverSettingsJson(await loadSettings());
   await writeJson(SETTINGS_PATH, validated);
+  if (inputsChanged) bumpSolverInputsVersion();
 }
 
 /**

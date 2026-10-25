@@ -1,4 +1,4 @@
-import { refreshVrmSettings } from "./src/api/api.js";
+import { refreshVrmSettings, fetchForecastAccuracy } from "./src/api/api.js";
 import { loadInitialConfig } from "./src/config-store.js";
 import { initPredictionsTab, reloadStoredForecasts } from "./src/predictions.js";
 import {
@@ -20,6 +20,24 @@ import {
 } from "./src/state.js";
 
 // ---------- Helpers ----------
+async function refreshForecastAccuracy() {
+  const element = document.getElementById("forecast-accuracy");
+  if (!element) return;
+  try {
+    const result = await fetchForecastAccuracy();
+    const value = element.querySelector(".forecast-accuracy-value");
+    if (value) value.textContent = Number.isFinite(result.scorePercent)
+      ? Math.round(result.scorePercent) + "%"
+      : "—";
+    element.title = result.days
+      ? "Day-ahead betrouwbaarheid: " + Math.round(result.scorePercent) + "% op basis van " + result.days + " volledige leveringsdagen (laatste " + result.windowDays + " dagen, 100% − WAPE)."
+      : "Nog geen volledige leveringsdagen vergeleken; de meting bouwt zich vanaf nu op.";
+    element.dataset.days = String(result.days || 0);
+  } catch (error) {
+    console.warn("Could not load forecast accuracy:", error);
+  }
+}
+
 function revealCards(panel) {
   const cards = panel.querySelectorAll('.card');
   cards.forEach((card, i) => {
@@ -35,7 +53,10 @@ let evSchedule = null;
 const optimizer = createOptimizerController({
   els,
   getEvEntries: () => evSchedule?.getEntries() ?? [],
-  onPlanRows: (rows) => evSchedule?.refreshHorizonQuickSet(rows),
+  onPlanRows: (rows) => {
+    evSchedule?.refreshHorizonQuickSet(rows);
+    void refreshForecastAccuracy();
+  },
   // The server regenerates the stored load/PV series when the horizon changes;
   // the Predictions tab caches them, so it has to re-read.
   onForecastsRefreshed: () => reloadStoredForecasts(),
@@ -117,6 +138,12 @@ async function boot() {
   const { config: initialConfig, source } = await loadInitialConfig();
 
   hydrateUI(els, initialConfig);
+  optimizer.hydrateChartPreferences(initialConfig);
+  // Migrate existing browser chart choices once; thereafter the server wins.
+  if (source === "api" && (initialConfig.chartViewRange == null
+    || initialConfig.chartFlowsResolution == null || initialConfig.chartShowNetRevenue == null)) {
+    optimizer.queuePersistSnapshot();
+  }
   optimizerQuickSettings = initOptimizerQuickSettings({
     selectionInput: els.optimizerQuickSettingsSelection,
     section: els.optimizerQuickSettingsSection,
@@ -127,6 +154,7 @@ async function boot() {
   });
 
   setupTabSwitcher();
+  void refreshForecastAccuracy();
   await initPredictionsTab();
 
   // Wire inputs with callbacks
@@ -138,6 +166,7 @@ async function boot() {
     onSave: optimizer.queuePersistSnapshot,
     onRun: optimizer.onRun,
     onTableDisplayChange: optimizer.onTableDisplayChange,
+    onGuardSettingsChange: optimizer.onGuardSettingsChange,
     updateTerminalCustomUI: () => updateTerminalCustomUI(els),
   });
 
@@ -194,6 +223,7 @@ async function onRefreshVrmSettings() {
     const payload = await refreshVrmSettings();
     const saved = payload?.settings || {};
     hydrateUI(els, saved);
+    optimizer.hydrateChartPreferences(saved);
     optimizerQuickSettings?.refresh();
     if (els.status) els.status.textContent = "System settings saved from VRM.";
   } catch (err) {

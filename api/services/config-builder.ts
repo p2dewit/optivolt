@@ -1,6 +1,7 @@
 import { HttpError } from '../http-errors.ts';
 import { extractWindow, extendSeriesWithForecast, getForecastTimeRange, getQuarterStart } from '../../lib/time-series-utils.ts';
 import { buildEvConfig } from './ev-config-builder.ts';
+import { buildGreenSocTargets } from './green-strategy.ts';
 import type { SolverConfig, TimeSeries } from '../../lib/types.ts';
 import type { Settings, Data } from '../types.ts';
 
@@ -112,6 +113,22 @@ export function buildSolverConfigFromSettings(
     maxGridExport_W:                      settings.maxGridExport_W,
     chargeEfficiency_percent:             settings.chargeEfficiency_percent,
     dischargeEfficiency_percent:          settings.dischargeEfficiency_percent,
+    strategy: settings.strategy,
+    minimumSellPrice_cents_per_kWh: settings.minimumSellPrice_eur_per_kWh * 100,
+    maximumBuyPrice_cents_per_kWh: settings.maximumBuyPrice_eur_per_kWh * 100,
+    ...(settings.strategy === 'green' ? {
+      greenSocTargets: buildGreenSocTargets({
+        load_W: extractWindow(data.load, nowMs, alignedEndMs, settings.stepSize_m),
+        pv_W: extractWindow(data.pv, nowMs, alignedEndMs, settings.stepSize_m),
+        startMs: nowMs,
+        stepSize_m: settings.stepSize_m,
+        batteryCapacity_Wh: settings.batteryCapacity_Wh,
+        minSoc_percent: settings.minSoc_percent,
+        maxSoc_percent: settings.maxSoc_percent,
+        dischargeEfficiency_percent: settings.dischargeEfficiency_percent,
+        idleDrain_W: settings.idleDrain_W,
+      }),
+    } : {}),
     batteryCost_cent_per_kWh:             settings.batteryCost_cent_per_kWh,
     idleDrain_W:                          settings.idleDrain_W,
     terminalSocValuation:                 settings.terminalSocValuation,

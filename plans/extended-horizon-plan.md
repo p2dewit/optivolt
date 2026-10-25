@@ -24,7 +24,8 @@ targets.
 
 The forecast source is <https://energie.bartm.be/forecast.json> (built in the
 `energieprijs` repo from the hosted EpexPredictor API): 15-minute Belgian spot
-prices ~7 days ahead with the Ecopower formulas applied, plus a `known_until`
+base EPEX prices ~7 days ahead; OptiVolt applies the configured all-in
+formulas, plus a `known_until`
 timestamp separating published day-ahead prices from model predictions.
 
 ## Phase 0 — Safety groundwork (this branch)

@@ -4,6 +4,9 @@ import { loadData, saveData, validateData } from '../services/data-store.ts';
 import { loadSettings } from '../services/settings-store.ts';
 import { assertCondition, toHttpError } from '../http-errors.ts';
 import type { TimeSeries, SocData, Data } from '../types.ts';
+import { toAllInExportPrices, toAllInImportPrices } from '../services/all-in-prices.ts';
+import { computePlan } from '../services/planner-service.ts';
+import { reconcileForecastAccuracy } from '../services/forecast-accuracy-service.ts';
 
 const router = express.Router();
 
@@ -57,7 +60,15 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       );
       if (key === 'soc') {
         nextData.soc = value as SocData;
-      } else if (key === 'load' || key === 'pv' || key === 'importPrice' || key === 'exportPrice') {
+      } else if (key === 'importPrice') {
+        // API price input contains base EPEX prices; convert to all-in prices
+        // before storing them in the solver's c€/kWh unit.
+        nextData.importPriceBase = value as TimeSeries;
+        nextData.importPrice = toAllInImportPrices(nextData.importPriceBase, settings);
+      } else if (key === 'exportPrice') {
+        nextData.exportPriceBase = value as TimeSeries;
+        nextData.exportPrice = toAllInExportPrices(nextData.exportPriceBase, settings);
+      } else if (key === 'load' || key === 'pv') {
         nextData[key] = value as TimeSeries;
       }
     }
@@ -70,13 +81,28 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     try {
+      if (keysToUpdate.includes('importPrice')) {
+        try { await reconcileForecastAccuracy(currentData, nextData); }
+        catch (accuracyError) { console.error('[forecast-accuracy] reconciliation failed:', accuracyError instanceof Error ? accuracyError.message : String(accuracyError)); }
+      }
       await saveData(nextData);
     } catch (saveError) {
       throw toHttpError(saveError, 500, 'Failed to persist data');
     }
 
     logDataUpdateCall(keysToUpdate);
-    res.json({ message: 'Data updated successfully', keysUpdated: keysToUpdate });
+    let planUpdated = false;
+    if (keysToUpdate.includes('importPrice') || keysToUpdate.includes('exportPrice')) {
+      try {
+        // Re-solve from the newly persisted price series so cached plan costs
+        // reflect the latest day-ahead prices. This never writes to Victron.
+        await computePlan();
+        planUpdated = true;
+      } catch (planError) {
+        console.error('[data] plan refresh after price update failed:', planError instanceof Error ? planError.message : String(planError));
+      }
+    }
+    res.json({ message: 'Data updated successfully', keysUpdated: keysToUpdate, planUpdated });
   } catch (error) {
     next(toHttpError(error, 500));
   }

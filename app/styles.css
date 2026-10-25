@@ -496,3 +496,200 @@ body {
 :root.dark .chart-empty-bars rect {
   fill: rgba(148, 163, 184, 0.10);
 }
+
+
+
+.total-plan-cost-tile {
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: rgba(248, 250, 252, 0.7);
+}
+
+:root.dark .total-plan-cost-tile {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.total-plan-cost-value {
+  overflow-wrap: anywhere;
+  font-size: clamp(0.72rem, 1.55vw, 1.35rem);
+  font-weight: 700;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.financial-positive {
+  color: #15803d;
+}
+
+:root.dark .financial-positive {
+  color: #4ade80;
+}
+
+.financial-negative {
+  color: #dc2626;
+}
+
+:root.dark .financial-negative {
+  color: #f87171;
+}
+
+
+/* Keep plan cost figures and chart controls readable on narrow screens. */
+.total-plan-cost-tile .stat-label {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+  font-size: 0.56rem;
+  letter-spacing: 0.035em;
+}
+
+.power-flows-header,
+.power-flows-controls,
+#optimizer-view-toggles {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+#optimizer-view-toggles {
+  justify-content: flex-end;
+}
+
+#optimizer-view-toggles [data-res-toggle],
+#optimizer-view-toggles [data-range-toggle] {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+#optimizer-view-toggles button {
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .total-plan-cost-tile {
+    padding: 0.4rem 0.35rem;
+  }
+
+  .total-plan-cost-tile .stat-label {
+    min-height: 3.6em;
+  }
+
+  .total-plan-cost-value {
+    font-size: clamp(0.6rem, 2.8vw, 0.9rem);
+  }
+
+  .power-flows-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .power-flows-header h3 {
+    align-self: stretch;
+    text-align: left;
+  }
+
+  .power-flows-controls {
+    width: 100%;
+    align-items: center;
+    justify-content: flex-end;
+    flex-direction: row;
+    gap: 0.25rem;
+  }
+
+  #optimizer-view-toggles {
+    width: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 0.25rem;
+  }
+
+  #optimizer-view-toggles button,
+  #show-net-revenue {
+    padding: 0.2rem 0.3rem;
+    font-size: 0.58rem;
+    white-space: nowrap;
+  }
+}
+
+/* Keep the strategy first while preserving the four financial tiles on mobile. */
+@media (min-width: 641px) {
+  .plan-result-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .plan-strategy-tile {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Keep strategy above the four financial tiles on every screen size. */
+.plan-result-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.plan-strategy-tile {
+  grid-column: 1 / -1;
+}
+
+
+.plan-strategy-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.plan-strategy-main {
+  min-width: 0;
+}
+
+.plan-strategy-toggle {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9999px;
+  color: #475569;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+:root.dark .plan-strategy-toggle {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #cbd5e1;
+}
+
+.plan-strategy-toggle:hover {
+  background: rgba(148, 163, 184, 0.16);
+}
+
+
+.forecast-accuracy {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  border: 1px solid rgb(148 163 184 / 35%);
+  border-radius: 9999px;
+  padding: 0.25rem 0.65rem;
+  white-space: nowrap;
+  color: rgb(71 85 105);
+}
+.dark .forecast-accuracy {
+  color: rgb(203 213 225);
+  border-color: rgb(148 163 184 / 30%);
+}
+.forecast-accuracy-value {
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.forecast-accuracy-label {
+  font-size: 0.68rem;
+}

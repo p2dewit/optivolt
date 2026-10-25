@@ -14,6 +14,13 @@ import {
 } from '../services/prediction-forecast-runner.ts';
 import type { Settings } from '../types.ts';
 import { isAddon } from '../env.ts';
+import { loadData, saveData } from '../services/data-store.ts';
+import {
+  toAllInExportPrices,
+  toAllInImportPrices,
+  toBaseEpexExportPrices,
+  toBaseEpexImportPrices,
+} from '../services/all-in-prices.ts';
 
 const router = express.Router();
 
@@ -53,8 +60,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       throw error;
     }
 
-    // Re-read so the response and the horizon comparison use the clamped form.
+    // Re-read so the response and all subsequent calculations use clamped settings.
     const savedSettings = await loadSettings();
+    const priceSettingsChanged = savedSettings.energyTax_eur_per_kWh !== prevSettings.energyTax_eur_per_kWh
+      || savedSettings.buyCost_eur_per_kWh !== prevSettings.buyCost_eur_per_kWh
+      || savedSettings.sellCost_eur_per_kWh !== prevSettings.sellCost_eur_per_kWh
+      || savedSettings.vat_percent !== prevSettings.vat_percent
+      || savedSettings.netMetering !== prevSettings.netMetering;
+    const pricesRecalculated = priceSettingsChanged
+      ? await recalculateStoredPrices(savedSettings, prevSettings)
+      : false;
+
     let forecastsRefreshed = false;
     if (savedSettings.extendedHorizonDays !== prevSettings.extendedHorizonDays) {
       forecastsRefreshed = await refreshForecastsForNewHorizon(savedSettings);
@@ -63,11 +79,49 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Reported so the client can re-read the stored series: the Predictions tab
     // caches them, and would otherwise show the old window until a manual
     // forecast run or a page reload.
-    res.json({ message: 'Settings saved successfully.', settings: redactSettingsForClient(savedSettings), forecastsRefreshed });
+    res.json({ message: 'Settings saved successfully.', settings: redactSettingsForClient(savedSettings), forecastsRefreshed, pricesRecalculated });
   } catch (error) {
     next(toHttpError(error, 500, 'Failed to save settings'));
   }
 });
+
+/**
+ * Recalculate stored price series from their base EPEX inputs after settings change.
+ * Legacy all-in series without a retained base are inverted once using the
+ * previous settings so fees and VAT are not applied on top of themselves.
+ */
+async function recalculateStoredPrices(settings: Settings, previous: Settings): Promise<boolean> {
+  const data = await loadData();
+  let changed = false;
+
+  if (settings.dataSources.prices === 'api' && previous.dataSources.prices === 'api') {
+    const importBase = data.importPriceBase ?? toBaseEpexImportPrices(data.importPrice, previous);
+    const exportBase = data.exportPriceBase ?? toBaseEpexExportPrices(data.exportPrice, previous);
+    data.importPriceBase = importBase;
+    data.exportPriceBase = exportBase;
+    data.importPrice = toAllInImportPrices(importBase, settings);
+    data.exportPrice = toAllInExportPrices(exportBase, settings);
+    changed = true;
+  }
+
+  const importForecastBase = data.importPriceForecastBase
+    ?? (data.importPriceForecast ? toBaseEpexImportPrices(data.importPriceForecast, previous) : undefined);
+  const exportForecastBase = data.exportPriceForecastBase
+    ?? (data.exportPriceForecast ? toBaseEpexExportPrices(data.exportPriceForecast, previous) : undefined);
+  if (importForecastBase) {
+    data.importPriceForecastBase = importForecastBase;
+    data.importPriceForecast = toAllInImportPrices(importForecastBase, settings);
+    changed = true;
+  }
+  if (exportForecastBase) {
+    data.exportPriceForecastBase = exportForecastBase;
+    data.exportPriceForecast = toAllInExportPrices(exportForecastBase, settings);
+    changed = true;
+  }
+
+  if (changed) await saveData(data);
+  return changed;
+}
 
 /**
  * The load and PV forecasts are generated over the configured horizon, but are

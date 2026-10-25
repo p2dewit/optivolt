@@ -20,6 +20,9 @@ const EMPTY_PLAN = Object.freeze({
   pricesKnownUntilMs: null,
   standardWindowEndMs: null,
   tsStart: null,
+  solverStatus: null,
+  computedAtMs: null,
+  inputsCurrent: true,
 });
 
 let plan = EMPTY_PLAN;
@@ -60,6 +63,9 @@ export function setPlan(result) {
       pricesKnownUntilMs: finiteOrNull(result.pricesKnownUntilMs),
       standardWindowEndMs: finiteOrNull(result.standardWindowEndMs),
       tsStart: result.tsStart ?? null,
+      solverStatus: result.solverStatus ?? null,
+      computedAtMs: Number.isFinite(Number(result.computedAtMs)) ? Number(result.computedAtMs) : Date.now(),
+      inputsCurrent: result.inputsCurrent !== false,
     }
     : EMPTY_PLAN;
 

@@ -1,4 +1,5 @@
 import { SOLUTION_COLORS } from "./charts.js";
+import { getStoredFlowsResolution, getStoredViewRange } from "./plan-view.js";
 import { parseQuickSettingSelection, writeQuickSettingSelection } from "./optimizer-quick-settings.js";
 
 // ---------- UI <-> settings snapshot ----------
@@ -34,6 +35,17 @@ export function snapshotUI(els) {
 
     extendedHorizonDays: num(els.extendedHorizonDays?.value),
     priceForecastUrl: els.priceForecastUrl?.value ?? '',
+    energyTax_eur_per_kWh: num(els.energyTax?.value),
+    buyCost_eur_per_kWh: num(els.buyCost?.value),
+    sellCost_eur_per_kWh: num(els.sellCost?.value),
+    vat_percent: num(els.vatPercent?.value),
+    netMetering: !!els.netMetering?.checked,
+    strategy: els.strategy?.value || "aggressive",
+    liveBlockGuardMode: els.liveBlockGuardMode?.value || "off",
+    pushToVictronEnabled: !!els.pushToVictron?.checked,
+    updateDataBeforeRun: !!els.updateDataBeforeRun?.checked,
+    minimumSellPrice_eur_per_kWh: num(els.minimumSellPrice?.value),
+    maximumBuyPrice_eur_per_kWh: num(els.maximumBuyPrice?.value),
 
     // ALGORITHM
     rebalanceEnabled: !!els.rebalanceEnabled?.checked,
@@ -57,7 +69,10 @@ export function snapshotUI(els) {
 
     // UI-only
     tableShowKwh: !!els.tableKwh?.checked,
-    // Note: updateDataBeforeRun / pushToVictron are not part of the persisted settings
+    tableShowDess: !!els.tableDess?.checked,
+    chartViewRange: getStoredViewRange(),
+    chartFlowsResolution: getStoredFlowsResolution() ?? "auto",
+    chartShowNetRevenue: els.showNetRevenue?.getAttribute("aria-pressed") === "true",
   };
 }
 
@@ -106,6 +121,17 @@ export function hydrateUI(els, obj = {}) {
   // Data / extended horizon
   setIfDef(els.extendedHorizonDays, obj.extendedHorizonDays);
   setIfDef(els.priceForecastUrl, obj.priceForecastUrl);
+  setFixedIfDef(els.energyTax, obj.energyTax_eur_per_kWh, 5);
+  setFixedIfDef(els.buyCost, obj.buyCost_eur_per_kWh, 5);
+  setFixedIfDef(els.sellCost, obj.sellCost_eur_per_kWh, 5);
+  setFixedIfDef(els.vatPercent, obj.vat_percent, 2);
+  if (els.netMetering && obj.netMetering != null) els.netMetering.checked = !!obj.netMetering;
+  if (els.strategy && obj.strategy != null) els.strategy.value = String(obj.strategy);
+  if (els.liveBlockGuardMode && obj.liveBlockGuardMode != null) els.liveBlockGuardMode.value = String(obj.liveBlockGuardMode);
+  if (els.pushToVictron && obj.pushToVictronEnabled != null) els.pushToVictron.checked = !!obj.pushToVictronEnabled;
+  if (els.updateDataBeforeRun && obj.updateDataBeforeRun != null) els.updateDataBeforeRun.checked = !!obj.updateDataBeforeRun;
+  setFixedIfDef(els.minimumSellPrice, obj.minimumSellPrice_eur_per_kWh, 5);
+  setFixedIfDef(els.maximumBuyPrice, obj.maximumBuyPrice_eur_per_kWh, 5);
 
   // HOME ASSISTANT
   setIfDef(els.haUrl, obj.haUrl);
@@ -129,6 +155,7 @@ export function hydrateUI(els, obj = {}) {
   setIfDef(els.evPlugSensor, obj.evPlugSensor);
 
   // UI-only
+  if (els.tableDess && obj.tableShowDess != null) els.tableDess.checked = !!obj.tableShowDess;
   if (els.tableKwh && obj.tableShowKwh != null) {
     els.tableKwh.checked = !!obj.tableShowKwh;
   }
@@ -166,6 +193,36 @@ export function updatePlanMeta(els, tsStart, tsEnd) {
 }
 
 // Summary helper
+export function updatePlanCostsUI(els, rows, strategy) {
+  if (els.planStrategy) {
+    const isGreen = strategy === "green";
+    els.planStrategy.textContent = isGreen ? "Green" : "Agressive";
+    els.planStrategy.classList.toggle("financial-positive", isGreen);
+    els.planStrategy.classList.toggle("financial-negative", !isGreen);
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    setFinancialValue(els.importCost, null);
+    setFinancialValue(els.exportRevenue, null);
+    setFinancialValue(els.batteryWearCost, null);
+    setFinancialValue(els.netRevenue, null);
+    return;
+  }
+
+  let importCost = 0;
+  let exportRevenue = 0;
+  let batteryWearCost = 0;
+  for (const row of rows) {
+    importCost += toFinite(row.importCost_cents) ?? 0;
+    exportRevenue += toFinite(row.exportCost_cents) ?? 0;
+    batteryWearCost += toFinite(row.batteryWearCost_cents) ?? 0;
+  }
+
+  setFinancialValue(els.netRevenue, exportRevenue - importCost - batteryWearCost);
+  setNeutralFinancialValue(els.importCost, importCost);
+  setFinancialValue(els.exportRevenue, exportRevenue);
+  setNeutralFinancialValue(els.batteryWearCost, batteryWearCost);
+}
+
 export function updateSummaryUI(els, summary) {
   if (!summary) {
     setText(els.sumLoad, "—");
@@ -174,7 +231,10 @@ export function updateSummaryUI(els, summary) {
     setText(els.sumLoadBatt, "—");
     setText(els.sumLoadPv, "—");
     setText(els.avgImport, "—");
-    setText(els.netCost, "—");
+    setFinancialValue(els.importCost, null);
+    setFinancialValue(els.exportRevenue, null);
+    setFinancialValue(els.batteryWearCost, null);
+    setFinancialValue(els.netRevenue, null);
     setText(els.gridBatteryTp, "—");
     setText(els.gridChargeTp, "—");
     setText(els.batteryExportTp, "—");
@@ -194,7 +254,6 @@ export function updateSummaryUI(els, summary) {
     loadFromBattery_kWh,
     loadFromPv_kWh,
     avgImportPrice_cents_per_kWh,
-    netGridCost_cents,
     gridBatteryTippingPoint_cents_per_kWh,
     gridChargeTippingPoint_cents_per_kWh,
     batteryExportTippingPoint_cents_per_kWh,
@@ -207,7 +266,6 @@ export function updateSummaryUI(els, summary) {
   setText(els.sumLoadBatt, formatKWh(loadFromBattery_kWh));
   setText(els.sumLoadPv, formatKWh(loadFromPv_kWh));
   setText(els.avgImport, formatCentsPerKWh(avgImportPrice_cents_per_kWh));
-  setText(els.netCost, formatCostCents(netGridCost_cents));
   setText(els.gridBatteryTp, formatTippingPoint(gridBatteryTippingPoint_cents_per_kWh, "↓"));
   setText(els.gridChargeTp, formatTippingPoint(gridChargeTippingPoint_cents_per_kWh, "↓"));
   // Show battery export tp if present, otherwise fall back to PV export tp
@@ -368,6 +426,10 @@ function setIfDef(el, v) {
   else el.textContent = s;
 }
 
+function setFixedIfDef(el, value, digits) {
+  if (el && value != null) el.value = Number(value).toFixed(digits);
+}
+
 function num(val) {
   const n = Number(val);
   return Number.isFinite(n) ? n : null;
@@ -423,9 +485,24 @@ function formatCentsPerKWh(v) {
   return n === null ? "—" : `${n.toFixed(2)} c€/kWh`;
 }
 
-function formatCostCents(v) {
+function formatCostEuro(v) {
   const n = toFinite(v);
-  return n === null ? "—" : `${n.toFixed(2)} c€`;
+  return n === null ? "—" : new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR" }).format(n / 100);
+}
+
+function setFinancialValue(element, cents) {
+  if (!element) return;
+  const value = toFinite(cents);
+  element.textContent = value === null ? "—" : formatCostEuro(value);
+  element.classList.toggle("financial-positive", value > 0);
+  element.classList.toggle("financial-negative", value < 0);
+}
+
+function setNeutralFinancialValue(element, cents) {
+  if (!element) return;
+  const value = toFinite(cents);
+  element.textContent = value === null ? "—" : formatCostEuro(value);
+  element.classList.remove("financial-positive", "financial-negative");
 }
 
 function formatTippingPoint(v, symbol) {

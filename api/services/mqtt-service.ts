@@ -22,6 +22,53 @@ export async function readVictronSetting(relativePath: string, { timeoutMs }: { 
   return client.readSetting(relativePath, { timeoutMs });
 }
 
+/**
+ * Reads the Dynamic ESS target of the slot active at now. TargetSoc is preferred;
+ * Soc is a compatibility fallback for Venus versions that expose only that key.
+ */
+export async function readVictronActiveDynamicEssTarget(nowMs = Date.now()): Promise<number | null> {
+  const client = getVictronClient();
+  const serial = await client.getSerial();
+  const asPercent = (payload: unknown): number | null => {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    const raw = (payload as { value?: unknown }).value;
+    if (raw == null || raw === '' || Array.isArray(raw)) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
+  };
+
+  // Venus publishes the currently active Dynamic ESS target separately from
+  // the configured schedule. Prefer that runtime value to inferencing a slot.
+  try {
+    const runtimeTarget = await client.readSetting('system/0/DynamicEss/TargetSoc', { serial });
+    const parsed = asPercent(runtimeTarget);
+    if (parsed != null && parsed > 0) return parsed;
+  } catch {
+    // Older Venus versions may not publish this runtime path; inspect slots below.
+  }
+
+  const slots = await Promise.all(Array.from({ length: 4 }, async (_, slotIndex) => {
+    const base = 'settings/0/Settings/DynamicEss/Schedule/' + slotIndex;
+    const [start, duration] = await Promise.all([
+      client.readSetting(base + '/Start', { serial }),
+      client.readSetting(base + '/Duration', { serial }),
+    ]) as [unknown, unknown];
+    const getValue = (payload: unknown) => payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? Number((payload as { value?: unknown }).value) : NaN;
+    return { base, start: getValue(start), duration: getValue(duration) };
+  }));
+  const now = nowMs / 1000;
+  const active = slots.filter(slot => Number.isFinite(slot.start) && Number.isFinite(slot.duration)
+    && slot.duration > 0 && slot.start <= now && now < slot.start + slot.duration)
+    .sort((a, b) => b.start - a.start)[0];
+  if (!active) return null;
+  const [targetSoc, soc] = await Promise.all([
+    client.readSetting(active.base + '/TargetSoc', { serial }),
+    client.readSetting(active.base + '/Soc', { serial }),
+  ]);
+  return asPercent(targetSoc) ?? asPercent(soc);
+}
+
 export async function writeVictronSetting(relativePath: string, value: unknown): Promise<void> {
   const client = getVictronClient();
   await client.writeSetting(relativePath, value);
@@ -82,6 +129,16 @@ export async function setDynamicEssSchedule(rows: PlanRowWithDess[], slotCount: 
   await Promise.all(tasks);
 
   return { serial, slotsWritten: nSlots };
+}
+
+export async function writeDynamicEssSlotSocTarget(slotIndex: number, targetPercent: number): Promise<void> {
+  const client = getVictronClient();
+  const serial = await client.getSerial();
+  const base = `settings/0/Settings/DynamicEss/Schedule/${slotIndex}`;
+  await Promise.all([
+    client.writeSetting(`${base}/Soc`, Math.round(targetPercent), { serial }),
+    client.writeSetting(`${base}/TargetSoc`, Math.round(targetPercent), { serial }),
+  ]);
 }
 
 export async function shutdownVictronClient(): Promise<void> {

@@ -30,6 +30,9 @@ export function injectTooltipStyles() {
       background:#1e293b; border-color:rgba(255,255,255,0.10); color:#e2e8f0;
       box-shadow:0 4px 20px rgba(0,0,0,0.35);
     }
+    @media (hover: none) and (pointer: coarse) {
+      .ov-tt { pointer-events:auto; touch-action:manipulation; }
+    }
     .ov-tt-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
     .ov-tt-time { font-weight:700; font-size:13px; color:#64748b; letter-spacing:.03em; }
     .dark .ov-tt-time { color:#94a3b8; }
@@ -146,6 +149,11 @@ export function createTooltipHandler({ renderContent }) {
         el.className = "ov-tt";
         parent.style.position = "relative";
         parent.appendChild(el);
+        el.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          el.style.opacity = '0';
+        });
       }
     }
 

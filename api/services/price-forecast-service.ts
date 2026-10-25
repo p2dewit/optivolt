@@ -2,16 +2,23 @@
  * price-forecast-service.ts
  *
  * Pulls forecast prices from a configured URL (the energieprijs forecast.json
- * format: EpexPredictor predictions with supplier formulas applied) and
- * persists them as data.importPriceForecast / data.exportPriceForecast.
+ * format containing base EPEX predictions) and persists them as all-in prices
+ * in data.importPriceForecast / data.exportPriceForecast.
+ *
+ * Forecast values use c€/kWh and the same settings-based import/export
+ * formulas as API-inserted actual price series.
  *
  * These series never replace actual prices — config-builder only uses them to
  * extend the tail of the actual price series when the extended horizon is on.
  */
 
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { fetchWithTimeout } from '../../lib/fetch-utils.ts';
 import { loadSettings } from './settings-store.ts';
 import { loadData, saveData } from './data-store.ts';
+import { toAllInExportPrices, toAllInImportPrices } from './all-in-prices.ts';
+import { reconcileForecastAccuracy, rememberForecastAccuracyCandidates } from './forecast-accuracy-service.ts';
 import type { TimeSeries } from '../types.ts';
 
 const PRICE_FORECAST_TIMEOUT_MS = 15000;
@@ -165,20 +172,36 @@ export async function refreshPriceForecastAndPersist(): Promise<void> {
   const settings = await loadSettings();
   if (settings.extendedHorizonDays <= 0 || !settings.priceForecastUrl) return;
 
-  const response = await fetchWithTimeout(
-    settings.priceForecastUrl,
-    {},
-    { timeoutMs: PRICE_FORECAST_TIMEOUT_MS, label: 'Price forecast request' },
-  );
-  if (!response.ok) {
-    throw new Error(`Price forecast feed returned status ${response.status}`);
+  const feedUrl = new URL(settings.priceForecastUrl);
+  let feed: ForecastFeed;
+  if (feedUrl.protocol === 'file:') {
+    // Local forecast.json files are useful when OptiVolt and the producer run
+    // in the same container; HTTP localhost would point back to OptiVolt.
+    feed = JSON.parse(await readFile(fileURLToPath(feedUrl), 'utf8')) as ForecastFeed;
+  } else {
+    const response = await fetchWithTimeout(
+      settings.priceForecastUrl,
+      {},
+      { timeoutMs: PRICE_FORECAST_TIMEOUT_MS, label: 'Price forecast request' },
+    );
+    if (!response.ok) {
+      throw new Error(`Price forecast feed returned status ${response.status}`);
+    }
+    feed = await response.json() as ForecastFeed;
   }
 
-  const parsed = parsePriceForecastFeed(await response.json() as ForecastFeed);
+  const parsed = parsePriceForecastFeed(feed);
 
   const data = await loadData();
-  data.importPriceForecast = parsed.importPriceForecast;
-  data.exportPriceForecast = parsed.exportPriceForecast;
+  // Catch any actuals against a saved pre-publication vintage, then preserve
+  // the current forecast before today's refresh overwrites it. Price updates
+  // can arrive just after this refresh, so the saved vintage is needed there.
+  await reconcileForecastAccuracy(data, data);
+  await rememberForecastAccuracyCandidates(data);
+  data.importPriceForecastBase = parsed.importPriceForecast;
+  data.exportPriceForecastBase = parsed.exportPriceForecast;
+  data.importPriceForecast = toAllInImportPrices(data.importPriceForecastBase, settings);
+  data.exportPriceForecast = toAllInExportPrices(data.exportPriceForecastBase, settings);
   await saveData(data);
 
   console.log('[price-forecast] refreshed', {

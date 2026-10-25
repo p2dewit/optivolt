@@ -33,6 +33,10 @@ export function validateData(d: Data): Data {
   validateTimeSeries(d.exportPrice, 'exportPrice');
   if (d.importPriceForecast !== undefined) validateTimeSeries(d.importPriceForecast, 'importPriceForecast');
   if (d.exportPriceForecast !== undefined) validateTimeSeries(d.exportPriceForecast, 'exportPriceForecast');
+  if (d.importPriceBase !== undefined) validateTimeSeries(d.importPriceBase, 'importPriceBase');
+  if (d.exportPriceBase !== undefined) validateTimeSeries(d.exportPriceBase, 'exportPriceBase');
+  if (d.importPriceForecastBase !== undefined) validateTimeSeries(d.importPriceForecastBase, 'importPriceForecastBase');
+  if (d.exportPriceForecastBase !== undefined) validateTimeSeries(d.exportPriceForecastBase, 'exportPriceForecastBase');
   if (!Number.isFinite(d.soc.value)) {
     throw new Error('Invalid soc: value must be a finite number; refresh VRM data first');
   }

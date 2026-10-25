@@ -6,6 +6,8 @@ export function getElements() {
     run: $("#run"),
     updateDataBeforeRun: $("#update-data-before-run"),
     pushToVictron: $("#push-to-victron"),
+    liveBlockGuardMode: $("#live-block-guard-mode"),
+    liveBlockGuardStatus: $("#live-block-guard-status"),
     optimizerQuickSettingsSection: $("#optimizer-quick-settings"),
     optimizerQuickSettingsBody: $("#optimizer-quick-settings-body"),
     optimizerQuickSettingsSelection: $("#optimizer-quick-settings-selection"),
@@ -15,6 +17,16 @@ export function getElements() {
     sourceSoc: $("#source-soc"),
     extendedHorizonDays: $("#extended-horizon-days"),
     priceForecastUrl: $("#price-forecast-url"),
+    energyTax: $("#price-energy-tax"),
+    buyCost: $("#price-buy-cost"),
+    sellCost: $("#price-sell-cost"),
+    vatPercent: $("#price-vat-percent"),
+    netMetering: $("#net-metering"),
+    strategy: $("#strategy-mode"),
+    planStrategy: $("#plan-strategy-value"),
+    planStrategyToggle: $("#plan-strategy-toggle"),
+    minimumSellPrice: $("#strategy-min-sell-price"),
+    maximumBuyPrice: $("#strategy-max-buy-price"),
     rebalanceToggleLabel: $("#rebalance-toggle-label"),
     rebalanceEnabled: $("#rebalance-enabled"),
     rebalanceNudge: $("#rebalance-nudge"),
@@ -66,7 +78,11 @@ export function getElements() {
     sumLoadBatt: $("#sum-load-batt-kwh"),
     sumLoadPv: $("#sum-load-pv-kwh"),
     avgImport: $("#avg-import-cent"),
-    netCost: $("#net-cost-cent"),
+    importCost: $("#plan-import-cost-euro"),
+    exportRevenue: $("#plan-export-revenue-euro"),
+    batteryWearCost: $("#plan-battery-wear-euro"),
+    netRevenue: $("#plan-revenue-euro"),
+    showNetRevenue: $("#show-net-revenue"),
     gridBatteryTp: $("#tipping-point-cent"),
     gridChargeTp: $("#grid-charge-point-cent"),
     batteryExportTp: $("#export-point-cent"),
@@ -149,7 +165,7 @@ export function getElements() {
 export function wireGlobalInputs(
   els,
   {
-    onInput, onSave = onInput, onRun, onTableDisplayChange = onRun, updateTerminalCustomUI,
+    onInput, onSave = onInput, onRun, onTableDisplayChange = onRun, onGuardSettingsChange = () => {}, updateTerminalCustomUI,
   }
 ) {
   // Auto-save only settings-owned controls.
@@ -158,10 +174,21 @@ export function wireGlobalInputs(
     const handler = el.hasAttribute('data-no-autosolve') ? onSave : onInput;
     el.addEventListener("input", handler);
     el.addEventListener("change", handler);
+    if (el === els.liveBlockGuardMode || el === els.pushToVictron) {
+      el.addEventListener("change", onGuardSettingsChange);
+    }
   }
 
   els.terminal?.addEventListener("change", updateTerminalCustomUI);
   updateTerminalCustomUI();
+
+  // Switch strategy from the PLAN RESULT card using its up/down control.
+  els.planStrategyToggle?.addEventListener("click", () => {
+    if (!els.strategy) return;
+    els.strategy.value = els.strategy.value === "green" ? "aggressive" : "green";
+    els.strategy.dispatchEvent(new Event("input", { bubbles: true }));
+    els.strategy.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 
   // Manual recompute
   els.run?.addEventListener("click", onRun);

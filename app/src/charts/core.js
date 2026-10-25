@@ -143,7 +143,8 @@ export function getBaseOptions({ ticksCb, tooltipTitleCb, gridCb, yTitle, stacke
         },
         title: { display: !!yTitle, text: yTitle, color: theme.axisTickColor },
         ...(overrides.scales?.y || {})
-      }
+      },
+      ...Object.fromEntries(Object.entries(overrides.scales || {}).filter(([id]) => id !== "x" && id !== "y"))
     }
   };
 }

@@ -1,5 +1,6 @@
 import type { TimeSeries, PlanRow, DessSlot, TerminalSocValuation } from '../lib/types.ts';
 import type { DayFilter, Aggregation } from '../lib/load-predictor-historical.ts';
+import type { Strategy } from '../lib/types.ts';
 import type { HaSensor, HaDerivedSensor } from '../lib/ha-postprocess.ts';
 
 export type { TimeSeries };
@@ -59,6 +60,23 @@ export interface Settings {
   extendedHorizonDays: number;
   /** URL of a price-forecast JSON feed (energieprijs forecast.json format). Empty = disabled. */
   priceForecastUrl: string;
+  energyTax_eur_per_kWh: number;
+  buyCost_eur_per_kWh: number;
+  sellCost_eur_per_kWh: number;
+  vat_percent: number;
+  netMetering: boolean;
+  strategy: Strategy;
+  liveBlockGuardMode: 'off' | 'monitor' | 'automatic';
+  pushToVictronEnabled: boolean;
+  updateDataBeforeRun: boolean;
+  tableShowKwh: boolean;
+  tableShowDess: boolean;
+  /** Null allows a browser's existing preference to migrate on first load. */
+  chartViewRange: 'standard' | 'full' | null;
+  chartFlowsResolution: 'auto' | '15' | '60' | null;
+  chartShowNetRevenue: boolean | null;
+  minimumSellPrice_eur_per_kWh: number;
+  maximumBuyPrice_eur_per_kWh: number;
 }
 
 // ----------------------------- Persisted data ---------------------------
@@ -122,9 +140,13 @@ export interface Data {
   pv: TimeSeries;
   importPrice: TimeSeries;
   exportPrice: TimeSeries;
+  importPriceBase?: TimeSeries;
+  exportPriceBase?: TimeSeries;
   /** Forecast prices pulled from priceForecastUrl; only extend the actual series, never override it. */
   importPriceForecast?: TimeSeries;
   exportPriceForecast?: TimeSeries;
+  importPriceForecastBase?: TimeSeries;
+  exportPriceForecastBase?: TimeSeries;
   soc: SocData;
   lastFullSocAt?: string | null;
   rebalanceState?: RebalanceState;

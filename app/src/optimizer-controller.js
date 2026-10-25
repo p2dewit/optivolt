@@ -14,8 +14,9 @@ import {
   updatePlanMeta,
   updateRebalanceNudgeUI,
   updateSummaryUI,
+  updatePlanCostsUI,
 } from "./state.js";
-import { resolvePlanView } from "./plan-view.js";
+import { resolvePlanView, storeViewRange, storeFlowsResolution } from "./plan-view.js";
 import {
   beginPlanRequest,
   getPlan,
@@ -25,9 +26,19 @@ import {
 } from "./plan-store.js";
 import { mountViewToggles, subscribeViewToggles } from "./view-toggles.js";
 import { renderNowPanel, startNowPanelTicker } from "./now-panel.js";
+import { fetchLiveBlockGuardStatus, refreshLiveBlockGuard as requestLiveBlockGuardRefresh, updateLiveBlockGuardMonitorPlan } from "./api/api.js";
 
 const CHART_PLACEHOLDER_IDLE = "Run the optimizer to see results";
+const NET_REVENUE_LINE_KEY = "optivolt:showNetRevenueLine";
+const SEG_ACTIVE = "rounded-full px-2.5 py-1 text-xs font-medium bg-white text-ink shadow-sm dark:bg-slate-700 dark:text-slate-100 transition-all";
+const SEG_INACTIVE = "rounded-full px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-all";
 const PLACEHOLDER_SELECTOR = "#panel-optimizer .chart-empty span, #panel-ev .chart-empty span";
+
+function setNetRevenueToggleState(button, active) {
+  if (!button) return;
+  button.className = active ? SEG_ACTIVE : SEG_INACTIVE;
+  button.setAttribute("aria-pressed", String(active));
+}
 
 /** Text of the not-yet-drawn chart overlays on the plan-driven tabs. */
 function setChartPlaceholders(text) {
@@ -63,12 +74,108 @@ export function createOptimizerController({
   };
 
   const viewToggles = mountViewToggles(els.optimizerViewToggles);
+  if (els.showNetRevenue) {
+    let enabled = false;
+    try { enabled = localStorage.getItem(NET_REVENUE_LINE_KEY) === "true"; } catch {}
+    setNetRevenueToggleState(els.showNetRevenue, enabled);
+    els.showNetRevenue.addEventListener("click", () => {
+      enabled = els.showNetRevenue.getAttribute("aria-pressed") !== "true";
+      setNetRevenueToggleState(els.showNetRevenue, enabled);
+      try { localStorage.setItem(NET_REVENUE_LINE_KEY, String(enabled)); } catch {}
+      queuePersistSnapshot();
+      renderVisuals();
+    });
+  }
   initEvPanelToggles(els);
-  subscribeViewToggles(() => { renderVisuals(); });
+  subscribeViewToggles(() => {
+    queuePersistSnapshot();
+    renderVisuals();
+  });
+
+  function hydrateChartPreferences(config) {
+    if (config.chartViewRange != null) storeViewRange(config.chartViewRange);
+    if (config.chartFlowsResolution != null) storeFlowsResolution(config.chartFlowsResolution);
+    if (typeof config.chartShowNetRevenue === "boolean" && els.showNetRevenue) {
+      setNetRevenueToggleState(els.showNetRevenue, config.chartShowNetRevenue);
+    }
+    renderVisuals();
+  }
 
   // Everything the plan drives is painted from the store, so a plan set from
   // anywhere (fresh solve, boot's cached fetch) renders the same way.
-  subscribePlan(renderPlan);
+  subscribePlan((plan) => {
+    renderPlan(plan);
+    void refreshLiveBlockGuardStatus();
+  });
+
+  // Price/forecast updates may be calculated by Home Assistant while this tab
+  // is open. Poll the cached plan and repaint only when it is newer and matches
+  // the current server inputs; renderPlan updates the four plan cost amounts.
+  let lastSeenPlanAt = getPlan().computedAtMs ?? 0;
+  setInterval(async () => {
+    try {
+      const latest = await deps.fetchLastPlan();
+      if (
+        latest?.inputsCurrent === true &&
+        Array.isArray(latest.rows) &&
+        latest.rows.length > 0 &&
+        Number(latest.computedAtMs) > lastSeenPlanAt
+      ) {
+        lastSeenPlanAt = Number(latest.computedAtMs);
+        setPlan(latest);
+      }
+    } catch {
+      // No current cached plan yet; the next poll will retry.
+    }
+  }, 30_000);
+
+  async function refreshLiveBlockGuardStatus(refreshBackend = false) {
+    if (!els.liveBlockGuardStatus) return;
+    try {
+      const current = getPlan();
+      const allRows = current.rows;
+      const rowStepMin = allRows.length > 1
+        ? (allRows[1].timestampMs - allRows[0].timestampMs) / 60_000
+        : getVizConfig().stepSize_m;
+      const currentRowIndex = allRows.length > 0 && Number.isFinite(rowStepMin) && rowStepMin > 0
+        ? Math.max(0, Math.floor((Date.now() - allRows[0].timestampMs) / (rowStepMin * 60_000)))
+        : 0;
+      const rows = allRows.slice(currentRowIndex, currentRowIndex + 4);
+      const monitorPlan = els.liveBlockGuardMode?.value === "monitor"
+        && current.solverStatus === "Optimal" && current.inputsCurrent !== false
+        && rows.length > 0 && Number.isFinite(rowStepMin) && rowStepMin > 0
+        ? {
+          solverStatus: current.solverStatus,
+          computedAtMs: current.computedAtMs,
+          timing: { startMs: rows[0].timestampMs, stepMin: rowStepMin },
+          rows,
+        }
+        : null;
+      await updateLiveBlockGuardMonitorPlan(monitorPlan);
+      if (refreshBackend) await requestLiveBlockGuardRefresh();
+      const status = await fetchLiveBlockGuardStatus();
+      const isPercent = (value) => typeof value === "number" && Number.isFinite(value);
+      const roundedPercent = (value) => String(Math.round(value)) + "%";
+      const monitorMode = status.mode === "monitor";
+      const rawStatus = typeof status.status === "string" ? status.status : "Status unavailable";
+      const monitorStatus = rawStatus.replace(/^Monitor:\s*/, "").replace(/^Monitoring SoC;\s*/, "");
+      const displayStatus = monitorMode
+        ? "Monitor only: " + (/^waiting for the (charging|discharging) target$/.test(monitorStatus)
+          ? "monitoring Victron DESS targets" : monitorStatus)
+        : rawStatus;
+      const soc = isPercent(status.soc_percent) ? " · Current SoC " + roundedPercent(status.soc_percent) : "";
+      const victronValue = isPercent(status.activeTarget_percent) ? status.activeTarget_percent : status.writtenTarget_percent;
+      const victronTarget = isPercent(victronValue) ? " · Victron SoC target " + roundedPercent(victronValue) : "";
+      const planTarget = isPercent(status.plannedTarget_percent) ? " · OptiVolt plan target " + roundedPercent(status.plannedTarget_percent) : "";
+      const proposal = monitorMode && isPercent(status.proposedTarget_percent)
+        ? " · OptiVolt would " + (status.direction === "discharge" ? "lower" : "raise")
+          + " target to " + roundedPercent(status.proposedTarget_percent) : "";
+      const reason = status.reason;
+      els.liveBlockGuardStatus.textContent = `${displayStatus}${soc}${victronTarget}${planTarget}${proposal}${reason ? ` — ${reason}` : ""}`;
+    } catch { els.liveBlockGuardStatus.textContent = "Guard status temporarily unavailable"; }
+  }
+  void refreshLiveBlockGuardStatus();
+  setInterval(() => { void refreshLiveBlockGuardStatus(); }, 30_000);
 
   // The "Now" block follows the wall clock, not the plan's first row, so it
   // keeps pointing at the right slot without a page reload.
@@ -205,14 +312,9 @@ export function createOptimizerController({
     }
   }
 
-  function onTableDisplayChange(event) {
-    if (!renderScheduleTable()) {
-      void onRun();
-      return;
-    }
-    if (event?.currentTarget === els.tableKwh) {
-      queuePersistSnapshot();
-    }
+  function onTableDisplayChange() {
+    queuePersistSnapshot();
+    renderScheduleTable();
   }
 
   // What the current plan looks like through the view toggles: visible rows,
@@ -244,6 +346,7 @@ export function createOptimizerController({
   // Re-render charts + table from the stored plan (no solve).
   function renderVisuals() {
     const planView = currentPlanView();
+    updatePlanCostsUI(els, planView.rows, els.strategy?.value);
     if (!planView.rows.length) return false;
     const { rows, chartRows, chartStepSize_m, chartRebalanceWindow } = planView;
     const cfg = getVizConfig();
@@ -252,7 +355,7 @@ export function createOptimizerController({
     viewToggles.update(planView);
 
     deps.drawFlowsBarStackSigned(
-      els.flows, chartRows, chartStepSize_m, chartRebalanceWindow, evSettings,
+      els.flows, chartRows, chartStepSize_m, chartRebalanceWindow, evSettings, els.showNetRevenue?.getAttribute("aria-pressed") === "true",
     );
     deps.drawSocChart(els.soc, rows, cfg.stepSize_m, evSettings);
     deps.drawPricesStepLines(els.prices, rows, cfg.stepSize_m, getPlan().pricesKnownUntilMs);
@@ -268,14 +371,22 @@ export function createOptimizerController({
       // The Predictions tab caches those series, so it has to re-read them or
       // it keeps charting the old window until a manual run or a reload.
       if (result?.forecastsRefreshed) await onForecastsRefreshed();
+      return true;
     } catch (error) {
       console.error("Failed to persist settings", error);
       if (els.status) els.status.textContent = `Settings error: ${error.message}`;
+      return false;
     }
   }
 
   function queuePersistSnapshot() {
     persistConfigDebounced(deps.snapshotUI(els));
+  }
+
+  async function onGuardSettingsChange() {
+    if (els.liveBlockGuardStatus) els.liveBlockGuardStatus.textContent = "Updating guard status…";
+    if (typeof persistConfigDebounced.cancel === "function") persistConfigDebounced.cancel();
+    if (await persistConfig()) await refreshLiveBlockGuardStatus(true);
   }
 
   function updateRunStatus(solverStatus, writeToVictron) {
@@ -317,6 +428,8 @@ export function createOptimizerController({
     loadLastPlan,
     onRun,
     onTableDisplayChange,
+    hydrateChartPreferences,
+    onGuardSettingsChange,
     persistConfig,
     persistConfigDebounced,
     queuePersistSnapshot,

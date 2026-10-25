@@ -36,5 +36,21 @@
   "evSocValue_cents_per_kWh": 0,
   "evTripSocBuffer_percent": 20,
   "extendedHorizonDays": 0,
-  "priceForecastUrl": ""
+  "priceForecastUrl": "",
+  "energyTax_eur_per_kWh": 0,
+  "buyCost_eur_per_kWh": 0,
+  "sellCost_eur_per_kWh": 0,
+  "vat_percent": 0,
+  "netMetering": false,
+  "strategy": "aggressive",
+  "liveBlockGuardMode": "off",
+  "pushToVictronEnabled": false,
+  "updateDataBeforeRun": false,
+  "tableShowKwh": false,
+  "tableShowDess": false,
+  "chartViewRange": null,
+  "chartFlowsResolution": null,
+  "chartShowNetRevenue": null,
+  "minimumSellPrice_eur_per_kWh": 0.30,
+  "maximumBuyPrice_eur_per_kWh": 0.15
 }

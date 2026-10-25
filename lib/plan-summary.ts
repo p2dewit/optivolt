@@ -10,7 +10,7 @@ import type { PlanRow, SolverConfig, DessDiagnostics, PlanSummary } from './type
 
 export function buildPlanSummary(
   rows: PlanRow[],
-  cfg: Pick<SolverConfig, 'stepSize_m'>,
+  cfg: Pick<SolverConfig, 'stepSize_m' | 'batteryCost_cent_per_kWh'>,
   dessDiagnostics: Partial<DessDiagnostics> = {},
   rebalance?: { enabled: boolean; startMs: number | null; remainingSlots: number },
 ): PlanSummary {
@@ -31,6 +31,7 @@ export function buildPlanSummary(
       importCost_cents: 0,
       exportCost_cents: 0,
       netGridCost_cents: 0,
+      batteryWearCost_cents: 0,
       avgImportPrice_cents_per_kWh: null,
       gridBatteryTippingPoint_cents_per_kWh:
         dessDiagnostics.gridBatteryTippingPoint_cents_per_kWh ?? null,
@@ -66,6 +67,7 @@ export function buildPlanSummary(
   let priceTimesEnergy = 0;
   let importCost = 0;
   let exportCost = 0;
+  let batteryWearCost = 0;
   let evFromGrid = 0;
   let evFromPv   = 0;
   let evFromBat  = 0;
@@ -96,6 +98,9 @@ export function buildPlanSummary(
     }
     importCost += finiteOr(row.importCost_cents, impK * row.ic);
     exportCost += finiteOr(row.exportCost_cents, expK * row.ec);
+    const batteryChargeK = W2kWh(row.g2b) + W2kWh(row.pv2b);
+    const batteryDischargeK = W2kWh(row.b2l) + W2kWh(row.b2g) + W2kWh(row.b2ev ?? 0);
+    batteryWearCost += finiteOr(row.batteryWearCost_cents, 0.5 * cfg.batteryCost_cent_per_kWh * (batteryChargeK + batteryDischargeK));
     const g2evK = W2kWh(row.g2ev ?? 0);
     evFromGrid += g2evK;
     evFromPv   += W2kWh(row.pv2ev ?? 0);
@@ -119,6 +124,7 @@ export function buildPlanSummary(
     importCost_cents: importCost,
     exportCost_cents: exportCost,
     netGridCost_cents: importCost - exportCost,
+    batteryWearCost_cents: batteryWearCost,
     avgImportPrice_cents_per_kWh: avgImportPrice,
     gridBatteryTippingPoint_cents_per_kWh:
       Number.isFinite(dessDiagnostics.gridBatteryTippingPoint_cents_per_kWh)

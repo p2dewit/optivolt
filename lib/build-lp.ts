@@ -8,6 +8,12 @@ export function buildLP({
   importPrice, // import price in c€/kWh
   exportPrice, // export price in c€/kWh
 
+  // strategy controls; price thresholds are all-in c€/kWh
+  strategy = 'aggressive',
+  minimumSellPrice_cents_per_kWh = 30,
+  maximumBuyPrice_cents_per_kWh = 15,
+  greenSocTargets = [],
+
   // static parameters
   stepSize_m = 15,
   batteryCapacity_Wh = 204800,
@@ -57,7 +63,20 @@ export function buildLP({
     evOnPerSlot: 1e-6,           // escalating per-slot penalty on ev_on_t: breaks symmetry between equivalent charging schedules
     rebalanceStartPerSlot: 1e-6, // escalating per-window penalty on start_balance_k: breaks symmetry between equivalent rebalance windows
   }
-  const softMinSocPenalty_cents_per_Wh = 0.05; // penalty to keep soc above minSoc when possible
+  const greenSocTargetPenalty_cents_per_Wh = 0.5;
+  const maxAbsMarketPrice_cents_per_kWh = Math.max(0, ...importPrice.map(price => Math.abs(price)), ...exportPrice.map(price => Math.abs(price)));
+  const greenGridImportPenalty_cents_per_kWh = strategy === 'green'
+    ? Math.max(1000, maxAbsMarketPrice_cents_per_kWh) + batteryCost_cent_per_kWh
+    : 0;
+  // Keep Green's self-sufficiency priority from pushing SoC below the configured
+  // minimum when importing to serve load is still feasible.
+  const softMinSocPenalty_cents_per_Wh = strategy === 'green'
+    ? (greenGridImportPenalty_cents_per_kWh + maxAbsMarketPrice_cents_per_kWh + batteryCost_cent_per_kWh + 1) / 1000
+    : 0.05;
+  const activeGreenSocTargets = strategy === 'green'
+    ? greenSocTargets.filter(target => Number.isInteger(target.slot) && target.slot >= 0 && target.slot < T && Number.isFinite(target.soc_Wh))
+    : [];
+  const greenSocShortfall = (index: number) => `green_soc_shortfall_${index}`;
 
   // Unit helpers
   const stepHours = stepSize_m / 60; // hours per slot
@@ -185,9 +204,13 @@ export function buildLP({
     const exportCoeff_cents = exportPrice[t] * priceCoeff; // c€
 
     // Aggregate coefficients for each variable
-    const gridToLoadCoeff = importCoeff_cents; // import cost
+    const greenImportPriority = strategy === 'green' ? greenGridImportPenalty_cents_per_kWh * priceCoeff : 0;
+    const gridToLoadCoeff = importCoeff_cents + greenImportPriority; // import cost plus Green self-sufficiency priority
     const gridToBatteryCoeff = importCoeff_cents + batteryCost_cents; // import cost + battery cost
-    const pvToGridCoeff = -exportCoeff_cents + TIEBREAK.avoidExport; // export revenue + slight penalty to prefer using PV locally
+    const greenSolarPriority = strategy === 'green'
+      ? (Math.max(0, exportPrice[t]) + batteryCost_cent_per_kWh + 1) * priceCoeff
+      : 0;
+    const pvToGridCoeff = -exportCoeff_cents + greenSolarPriority + TIEBREAK.avoidExport; // prefer storing solar before export
     const batteryToGridCoeff = -exportCoeff_cents + batteryCost_cents; // export revenue + battery cost
     const batteryToLoadCoeff = batteryCost_cents; // battery cost
     const pvToBatteryCoeff = batteryCost_cents + TIEBREAK.pvToLoad; // battery cost
@@ -210,6 +233,11 @@ export function buildLP({
     }
     objTerms.push(` + ${toNum(socShortfallCoeff)} ${socShortfall(t)}`);
   }
+  // Soft Green reserve targets; unmet targets remain feasible with a penalty.
+  for (let i = 0; i < activeGreenSocTargets.length; i++) {
+    objTerms.push(` + ${toNum(greenSocTargetPenalty_cents_per_Wh)} ${greenSocShortfall(i)}`);
+  }
+
   // Terminal SOC valuation
   if (terminalPrice_cents_per_Wh > 0) {
     objTerms.push(` - ${toNum(terminalPrice_cents_per_Wh)} ${soc(T - 1)}`);
@@ -278,6 +306,10 @@ export function buildLP({
 
     // Soft min SOC constraint
     lines.push(` c_min_soc_${t}: ${socShortfall(t)} + ${soc(t)} >= ${minSoc_Wh}`);
+  }
+  for (let i = 0; i < activeGreenSocTargets.length; i++) {
+    const target = activeGreenSocTargets[i];
+    lines.push(` c_green_soc_target_${i}: ${soc(target.slot)} + ${greenSocShortfall(i)} >= ${toNum(target.soc_Wh)}`);
   }
 
   // MILP rebalancing: force a contiguous window of D slots to hold the battery at target SoC
@@ -379,7 +411,11 @@ export function buildLP({
   for (let t = 0; t < T; t++) {
     // Grid → load/battery (cannot exceed import limit; load cap for the load branch)
     lines.push(` 0 <= ${gridToLoad(t)} <= ${toNum(Math.min(maxGridImport_W, load_W[t]))}`);
-    lines.push(` 0 <= ${gridToBattery(t)} <= ${toNum(Math.min(maxGridImport_W, maxChargePower_W))}`);
+    const maxGridBatteryPower = Math.min(maxGridImport_W, maxChargePower_W);
+    const gridBatteryLimit = strategy === 'green' && importPrice[t] > maximumBuyPrice_cents_per_kWh
+      ? 0
+      : maxGridBatteryPower;
+    lines.push(` 0 <= ${gridToBattery(t)} <= ${toNum(gridBatteryLimit)}`);
 
     // PV splits (no curtailment overall; per-branch caps keep things sane)
     lines.push(` 0 <= ${pvToLoad(t)} <= ${toNum(load_W[t])}`);
@@ -388,7 +424,11 @@ export function buildLP({
 
     // Battery → load/grid (cannot exceed discharge or respective sinks)
     lines.push(` 0 <= ${batteryToLoad(t)} <= ${toNum(Math.min(maxDischargePower_W, load_W[t]))}`);
-    lines.push(` 0 <= ${batteryToGrid(t)} <= ${toNum(Math.min(maxDischargePower_W, maxGridExport_W))}`);
+    const maxBatteryExportPower = Math.min(maxDischargePower_W, maxGridExport_W);
+    const batteryExportLimit = strategy === 'green' && exportPrice[t] < minimumSellPrice_cents_per_kWh
+      ? 0
+      : maxBatteryExportPower;
+    lines.push(` 0 <= ${batteryToGrid(t)} <= ${toNum(batteryExportLimit)}`);
 
     // SOC bounds
     // minSoc handled via soft constraint
@@ -400,6 +440,9 @@ export function buildLP({
       lines.push(` 0 <= ${batteryToEv(t)} <= ${toNum(Math.min(maxDischargePower_W, evMaxPow_W))}`);
       lines.push(` 0 <= ${evSocVar(t)} <= ${toNum(evSocUpper[t])}`);
     }
+  }
+  for (let i = 0; i < activeGreenSocTargets.length; i++) {
+    lines.push(` ${greenSocShortfall(i)} >= 0`);
   }
   lines.push("");
 

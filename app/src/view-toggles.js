@@ -5,7 +5,7 @@
  * segmented controls, shared by every tab that charts the plan.
  *
  * Each tab mounts its own pair in the header of its first chart, but the
- * choice itself is global: it lives in localStorage (see plan-view.js) and a
+ * choice itself is global: it is saved in server settings, and a
  * change on one tab broadcasts to the others so their cached charts re-render
  * instead of going stale behind a tab switch.
  */

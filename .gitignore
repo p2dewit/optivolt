@@ -8,3 +8,12 @@ coverage
 .claude/worktrees/
 .superpowers/
 docs/superpowers/
+# Lokale installatiegegevens
+.env
+.env.*
+!.env.example
+/backups/
+/data/
+*.bak
+*.pem
+*.key

@@ -3,6 +3,14 @@
  */
 
 export type TerminalSocValuation = 'zero' | 'min' | 'avg' | 'max' | 'custom';
+export type Strategy = 'aggressive' | 'green';
+
+export interface GreenSocTarget {
+  slot: number;
+  soc_Wh: number;
+  boundary: 'sunrise' | 'sunset';
+}
+
 
 /**
  * How HA should control the charger for a given slot:
@@ -72,6 +80,12 @@ export interface SolverConfig {
   pv_W: number[];
   importPrice: number[];
   exportPrice: number[];
+
+  // Strategy controls (thresholds are all-in c€/kWh)
+  strategy?: Strategy;
+  minimumSellPrice_cents_per_kWh?: number;
+  maximumBuyPrice_cents_per_kWh?: number;
+  greenSocTargets?: GreenSocTarget[];
 
   // Battery parameters
   stepSize_m: number;
@@ -151,6 +165,7 @@ export interface PlanRow {
   exp: number;   // total export W (pv2g + b2g)
   importCost_cents: number;  // import energy cost for this slot, in c€
   exportCost_cents: number;  // export energy value for this slot, in c€
+  batteryWearCost_cents?: number; // estimated wear cost for this slot, in c€
   soc_Wh: number;   // battery SoC Wh
   /** @deprecated Wire-compat alias of soc_Wh for external /calculate consumers; will be removed in a future version. */
   soc: number;
@@ -211,6 +226,7 @@ export interface PlanSummary {
   importCost_cents: number;
   exportCost_cents: number;
   netGridCost_cents: number;
+  batteryWearCost_cents: number;
   avgImportPrice_cents_per_kWh: number | null;
   gridBatteryTippingPoint_cents_per_kWh: number | null;
   gridChargeTippingPoint_cents_per_kWh: number | null;

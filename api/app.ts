@@ -11,6 +11,8 @@ import vrmRouter from './routes/vrm.ts';
 import predictionsRouter from './routes/predictions.ts';
 import haRouter from './routes/ha.ts';
 import evRouter from './routes/ev.ts';
+import forecastAccuracyRouter from './routes/forecast-accuracy.ts';
+import liveBlockGuardRouter from './routes/live-block-guard.ts';
 
 const app = express();
 app.disable('x-powered-by');
@@ -27,6 +29,8 @@ app.use('/vrm', vrmRouter);
 app.use('/predictions', predictionsRouter);
 app.use('/ha', haRouter);
 app.use('/ev', evRouter);
+app.use('/forecast-accuracy', forecastAccuracyRouter);
+app.use('/live-block-guard', liveBlockGuardRouter);
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ message: 'Optivolt API is running.' });

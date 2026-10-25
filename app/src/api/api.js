@@ -61,3 +61,9 @@ export const fetchPredictionAdjustments = () => getJson('/predictions/adjustment
 export const createPredictionAdjustment = (adjustment) => postJson('/predictions/adjustments', adjustment);
 export const updatePredictionAdjustment = (id, adjustment) => postJson(`/predictions/adjustments/${encodeURIComponent(id)}`, adjustment, { method: 'PATCH' });
 export const deletePredictionAdjustment = (id) => postJson(`/predictions/adjustments/${encodeURIComponent(id)}`, {}, { method: 'DELETE' });
+
+// --- Forecast accuracy ---
+export const fetchForecastAccuracy = () => getJson('/forecast-accuracy');
+export const fetchLiveBlockGuardStatus = () => getJson('/live-block-guard');
+export const refreshLiveBlockGuard = () => postJson('/live-block-guard/refresh', {});
+export const updateLiveBlockGuardMonitorPlan = (plan) => postJson('/live-block-guard/monitor-plan', { plan });

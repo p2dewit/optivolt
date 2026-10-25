@@ -1,12 +1,14 @@
 import app from './app.ts';
 import { getServerEnv } from './env.ts';
 import { shutdownVictronClient } from './services/mqtt-service.ts';
+import { startLiveBlockGuard } from './services/live-block-guard.ts';
 
 const { host, port } = getServerEnv();
 
 const server = app.listen(port, host, () => {
   console.log(`Server listening on http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
   console.log(`Node version: ${process.version}`);
+  startLiveBlockGuard();
 });
 
 // The add-on supervisor stops us with SIGTERM; disconnect the MQTT client

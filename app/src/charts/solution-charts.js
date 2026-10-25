@@ -25,7 +25,7 @@ const FLOWS_TOOLTIP_LABELS = {
   g2b:   "Grid → Battery",
 };
 
-function makeFlowsTooltip(rows, flowSpecs, h) {
+function makeFlowsTooltip(rows, flowSpecs, h, showNetRevenue = false, cumulativeNetEuro = []) {
   const W2kWh = (x) => (x || 0) * h / 1000;
 
   return createTooltipHandler({
@@ -54,6 +54,11 @@ function makeFlowsTooltip(rows, flowSpecs, h) {
         }
       }
 
+      if (showNetRevenue) {
+        const netRevenueEuro = cumulativeNetEuro[idx] ?? 0;
+        html += ttDivider();
+        html += ttRow(SOLUTION_COLORS.b2g, "Revenue", new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(netRevenueEuro));
+      }
       html += ttDivider();
       html += ttPrices(`${row.ic.toFixed(1)}¢`, `${row.ec.toFixed(1)}¢`);
       return html;
@@ -61,9 +66,13 @@ function makeFlowsTooltip(rows, flowSpecs, h) {
   });
 }
 
-export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalanceWindow = null, evSettings = null) {
+export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalanceWindow = null, evSettings = null, showNetRevenue = false) {
   const timestampsMs = rows.map(r => r.timestampMs);
   const axis = buildTimeAxisFromTimestamps(timestampsMs);
+  const mobileChart = (canvas.clientWidth || canvas.width) <= 640;
+  const axisTickFontSize = mobileChart ? 8 : 12;
+  const axisTitleFontSize = mobileChart ? 9 : 12;
+  const legendFontSize = mobileChart ? 9 : 12;
 
   const h = Math.max(0.000001, Number(stepSize_m) / 60);
   const W2kWh = (x) => (x || 0) * h / 1000;
@@ -96,6 +105,52 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
       )
     );
 
+  const cumulativeNetEuro = [];
+  let cumulativeNetCents = 0;
+  for (const row of rows) {
+    cumulativeNetCents += (row.exportCost_cents || 0) - (row.importCost_cents || 0) - (row.batteryWearCost_cents || 0);
+    cumulativeNetEuro.push(cumulativeNetCents / 100);
+  }
+
+  if (showNetRevenue) {
+    const revenueScale = 3; // €3 positive = green, €3 negative = red
+    const revenueStops = [
+      { at: -1, rgb: [220, 38, 38] },
+      { at: -0.5, rgb: [249, 115, 22] },
+      { at: 0, rgb: [250, 204, 21] },
+      { at: 0.5, rgb: [132, 204, 22] },
+      { at: 1, rgb: [34, 197, 94] },
+    ];
+    const revenueColor = value => {
+      const position = Math.max(-1, Math.min(1, value / revenueScale));
+      let right = revenueStops.findIndex(stop => stop.at >= position);
+      if (right <= 0) right = 1;
+      const leftStop = revenueStops[right - 1];
+      const rightStop = revenueStops[right];
+      const mix = (position - leftStop.at) / (rightStop.at - leftStop.at);
+      const rgb = leftStop.rgb.map((channel, index) => Math.round(channel + (rightStop.rgb[index] - channel) * mix));
+      return `rgb(${rgb.join(", ")})`;
+    };
+
+    datasets.push({
+      type: "line",
+      label: "Revenue",
+      data: cumulativeNetEuro,
+      yAxisID: "yRevenue",
+      borderColor: "rgb(250, 204, 21)",
+      segment: {
+        borderColor: context => revenueColor((context.p0.parsed.y + context.p1.parsed.y) / 2),
+      },
+      backgroundColor: SOLUTION_COLORS.b2g,
+      borderWidth: context => context.chart.width <= 640 ? 0.8 : 1.5,
+      tension: 0.2,
+      pointRadius: 0,
+      pointHitRadius: 8,
+      fill: false,
+      clip: false,
+    });
+  }
+
   const plugins = rebalanceWindow
     ? [makeRebalancingPlugin(rebalanceWindow.startIdx, rebalanceWindow.endIdx)]
     : [];
@@ -118,19 +173,38 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
     options: getBaseOptions({ ...axis, yTitle: "kWh", stacked: true }, {
       ...getChartAnimations('bar', rows.length),
       plugins: {
+        legend: { labels: { font: { size: legendFontSize } } },
         tooltip: {
           mode: "index",
           intersect: false,
           enabled: false,
-          external: makeFlowsTooltip(rows, flowSpecs, h),
+          external: makeFlowsTooltip(rows, flowSpecs, h, showNetRevenue, cumulativeNetEuro),
           callbacks: { title: axis.tooltipTitleCb },
         }
       },
       layout: { padding: { bottom: 0 } },
       scales: {
         x: {
-          ticks: { padding: BUY_PRICE_STRIP_TICK_PADDING },
+          ticks: { padding: BUY_PRICE_STRIP_TICK_PADDING, font: { size: axisTickFontSize } },
         },
+        y: {
+          ticks: { font: { size: axisTickFontSize } },
+          title: { display: true, text: "kWh", font: { size: axisTitleFontSize } },
+        },
+        ...(showNetRevenue ? {
+          yRevenue: {
+            type: "linear",
+            position: "right",
+            beginAtZero: true,
+            stacked: false,
+            title: { display: true, text: "Revenue (€)", font: { size: axisTitleFontSize } },
+            grid: { drawOnChartArea: false },
+            ticks: {
+              font: { size: axisTickFontSize },
+              callback: value => new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value),
+            },
+          },
+        } : {}),
       },
     }),
     plugins,

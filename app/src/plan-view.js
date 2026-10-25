@@ -15,6 +15,8 @@
 
 const VIEW_RANGE_KEY = "optivolt:viewRange";
 const FLOWS_RES_KEY = "optivolt:flowsResolution";
+let currentViewRange;
+let currentFlowsResolution;
 
 /**
  * Fallback end of the "standard" view for a plan starting at the given
@@ -94,7 +96,7 @@ const ENERGY_MEAN_KEYS = [
   "g2ev", "pv2ev", "b2ev", "ev_charge", "ev_charge_A",
   "imp", "exp",
 ];
-const SUM_KEYS = ["importCost_cents", "exportCost_cents"];
+const SUM_KEYS = ["importCost_cents", "exportCost_cents", "batteryWearCost_cents"];
 const SLOT_MEAN_KEYS = ["ic", "ec"]; // prices: plain mean over present slots
 
 /**
@@ -226,10 +228,11 @@ export function resolvePlanView({
 }
 
 // ---------------------------------------------------------------------------
-// Client-side persistence of the view toggles (localStorage; never synced)
+// In-memory choices, hydrated from server settings; localStorage supports migration.
 // ---------------------------------------------------------------------------
 
 export function getStoredViewRange() {
+  if (currentViewRange !== undefined) return currentViewRange;
   try {
     return localStorage.getItem(VIEW_RANGE_KEY) === "full" ? "full" : "standard";
   } catch {
@@ -238,6 +241,7 @@ export function getStoredViewRange() {
 }
 
 export function storeViewRange(range) {
+  currentViewRange = range === "full" ? "full" : "standard";
   try {
     localStorage.setItem(VIEW_RANGE_KEY, range === "full" ? "full" : "standard");
   } catch { /* private mode etc. — the toggle just won't persist */ }
@@ -245,6 +249,7 @@ export function storeViewRange(range) {
 
 /** Explicit user choice ('15' | '60'), or null meaning "auto". */
 export function getStoredFlowsResolution() {
+  if (currentFlowsResolution !== undefined) return currentFlowsResolution;
   try {
     const v = localStorage.getItem(FLOWS_RES_KEY);
     return v === "15" || v === "60" ? v : null;
@@ -254,7 +259,9 @@ export function getStoredFlowsResolution() {
 }
 
 export function storeFlowsResolution(res) {
+  currentFlowsResolution = res === "15" || res === "60" ? res : null;
   try {
-    localStorage.setItem(FLOWS_RES_KEY, res === "60" ? "60" : "15");
+    if (currentFlowsResolution === null) localStorage.removeItem(FLOWS_RES_KEY);
+    else localStorage.setItem(FLOWS_RES_KEY, currentFlowsResolution);
   } catch { /* ignore */ }
 }
