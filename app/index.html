@@ -107,36 +107,49 @@
   <!-- Main -->
   <main id="panel-optimizer" role="tabpanel" aria-labelledby="tab-optimizer"
     class="mx-auto w-full max-w-7xl px-4 py-8 grid gap-6 lg:grid-cols-3">
-    <!-- Total plan costs — full width -->
+    <!-- Strategy — full width -->
     <section class="lg:col-span-3 min-w-0">
       <div class="card">
         <div class="mb-3 flex items-center justify-between">
-          <h3 class="sidebar-label">PLAN RESULT</h3>
+          <h3 class="sidebar-label">STRATEGY</h3>
         </div>
         <div class="plan-result-grid grid grid-cols-4 gap-2">
           <div class="total-plan-cost-tile plan-strategy-tile">
             <div class="plan-strategy-main">
-              <div class="stat-label mb-2">STRATEGY</div>
               <div id="plan-strategy-value" class="total-plan-cost-value">—</div>
             </div>
             <button id="plan-strategy-toggle" class="plan-strategy-toggle" type="button" aria-label="Change strategy" title="Change strategy">⇅</button>
           </div>
-          <div class="total-plan-cost-tile">
-            <div class="stat-label mb-2">REVENUE</div>
-            <div id="plan-revenue-euro" class="total-plan-cost-value" title="Export revenue minus import and battery wear costs">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Realized values for the current local day -->
+    <section class="lg:col-span-3 min-w-0">
+      <div class="card">
+        <div class="power-flows-header mb-3 flex items-center justify-between gap-4">
+          <h3 class="sidebar-label">DAY ACTUALS</h3>
+          <div class="power-flows-controls flex items-center gap-3">
+            <div class="inline-flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-800" role="group" aria-label="Actual revenue chart option">
+              <button id="show-actual-revenue" type="button" aria-pressed="false" title="Plot today’s cumulative realized result">Revenue</button>
+            </div>
+            <div id="day-actuals-view-toggles" class="flex items-center gap-2"></div>
           </div>
-          <div class="total-plan-cost-tile">
-            <div class="stat-label mb-2">IMPORT COST</div>
-            <div id="plan-import-cost-euro" class="total-plan-cost-value">—</div>
-          </div>
-          <div class="total-plan-cost-tile">
-            <div class="stat-label mb-2">EXPORT REVENUE</div>
-            <div id="plan-export-revenue-euro" class="total-plan-cost-value">—</div>
-          </div>
-          <div class="total-plan-cost-tile">
-            <div class="stat-label mb-2">BATTERY WEAR COST</div>
-            <div id="plan-battery-wear-euro" class="total-plan-cost-value">—</div>
-          </div>
+        </div>
+        <div class="mb-2 flex items-center justify-between" role="group" aria-label="Choose day for power flows">
+          <button id="day-actuals-prev" type="button" class="text-sm text-slate-500 hover:text-ink dark:hover:text-white">← Yesterday</button>
+          <button id="day-actuals-day" type="button" class="text-sm font-semibold text-ink dark:text-white">Today</button>
+          <button id="day-actuals-next" type="button" class="text-sm text-slate-500 hover:text-ink dark:hover:text-white">Tomorrow →</button>
+        </div>
+        <p id="day-actuals-status" class="mb-2 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">Loading today’s GX actuals…</p>
+        <div class="h-80 w-full chart-wrap" data-chart-empty="No realized GX data is available for today">
+          <canvas id="actual-flows" class="h-full w-full"></canvas>
+        </div>
+        <div class="plan-result-grid grid grid-cols-4 gap-2 mt-4">
+          <div class="total-plan-cost-tile"><div class="stat-label mb-2">REVENUE</div><div id="day-result-euro" class="total-plan-cost-value">—</div></div>
+          <div class="total-plan-cost-tile"><div class="stat-label mb-2">IMPORT COST</div><div id="day-costs-euro" class="total-plan-cost-value">—</div></div>
+          <div class="total-plan-cost-tile"><div class="stat-label mb-2">EXPORT REVENUE</div><div id="day-revenue-euro" class="total-plan-cost-value">—</div></div>
+          <div class="total-plan-cost-tile"><div class="stat-label mb-2">BATTERY WEAR COST</div><div id="day-battery-costs-euro" class="total-plan-cost-value">—</div></div>
         </div>
       </div>
     </section>
@@ -155,6 +168,24 @@
         </div>
         <div class="h-80 w-full chart-wrap" data-chart-empty="Run the optimizer to see results">
           <canvas id="flows" class="h-full w-full"></canvas>
+        </div>
+        <div class="plan-result-grid grid grid-cols-4 gap-2 mt-4">
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">REVENUE</div>
+            <div id="plan-revenue-euro" class="total-plan-cost-value" title="Export revenue minus import and battery wear costs">—</div>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">IMPORT COST</div>
+            <div id="plan-import-cost-euro" class="total-plan-cost-value">—</div>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">EXPORT REVENUE</div>
+            <div id="plan-export-revenue-euro" class="total-plan-cost-value">—</div>
+          </div>
+          <div class="total-plan-cost-tile">
+            <div class="stat-label mb-2">BATTERY WEAR COST</div>
+            <div id="plan-battery-wear-euro" class="total-plan-cost-value">—</div>
+          </div>
         </div>
       </div>
     </section>
@@ -226,6 +257,9 @@
               <input id="push-to-victron" type="checkbox" data-settings-input data-no-autosolve>
               <span class="toggle-knob"></span>
               <span class="text-sm text-slate-600 dark:text-slate-400">Push schedule to Victron</span>
+              <span id="victron-mode"
+                class="text-sm font-medium text-slate-500 dark:text-slate-400"
+                aria-live="polite">Mode: —</span>
             </label>
           </div>
           <div class="mt-4 rounded-lg border border-slate-200 p-3 dark:border-white/10">
@@ -236,7 +270,7 @@
               <option value="automatic">Automatic adjustment</option>
             </select>
             <p id="live-block-guard-status" class="mt-2 text-xs text-slate-500 dark:text-slate-400" aria-live="polite">Status unavailable</p>
-            <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">Helps prevent intermediate SoC targets from interrupting consecutive high-power charging or discharging slots. The guard adjusts SoC targets and does not set the charging or discharging power. It checks every minute. Monitor only shows proposals; automatic changes require “Push schedule to Victron” to be on.</p>
+            <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">Keeps consecutive charging or discharging slots together, including lower-power slots near full or empty SoC. Hover over or focus the status to see the recognized block. The guard adjusts SoC targets, not battery power limits, and checks every minute. Monitor only shows proposals; automatic changes require “Push schedule to Victron” to be on.</p>
           </div>
 
           <!-- Recompute -->
@@ -354,7 +388,7 @@
       <div class="card">
         <div class="mb-3 flex items-center justify-between gap-3">
           <h3 class="sidebar-label">Energy prices</h3>
-          <div id="forecast-accuracy" class="forecast-accuracy" role="status" aria-live="polite" title="Vergelijking van volledige day-ahead leveringsdagen in de laatste 30 dagen">
+          <div id="forecast-accuracy" class="forecast-accuracy" role="status" aria-live="polite">
             <span class="forecast-accuracy-value">—</span>
             <span class="forecast-accuracy-label">DA reliability · 30d</span>
           </div>

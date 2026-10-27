@@ -693,3 +693,33 @@ body {
 .forecast-accuracy-label {
   font-size: 0.68rem;
 }
+
+/* Live block guard preview: planned power, colored only for recognized slots. */
+.guard-block-trigger { cursor: help; }
+.guard-block-trigger:focus-visible { outline: 2px solid #0284c7; outline-offset: 3px; border-radius: 3px; }
+.guard-block-tooltip {
+  position: fixed; z-index: 1000; width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px); overflow: auto; box-sizing: border-box;
+  padding: 16px; border: 1px solid #cbd5e1; border-radius: 12px;
+  background: #fff; color: #334155; box-shadow: 0 12px 36px rgb(15 23 42 / 20%);
+  font-size: 12px; line-height: 1.45;
+}
+.guard-block-tooltip[hidden] { display: none; }
+.guard-block-tooltip svg { display: block; width: 100%; height: auto; margin: 8px 0; }
+.guard-block-heading { display: block; font-size: 14px; color: #0f172a; }
+.guard-block-note { margin: 5px 0 0; color: #64748b; }
+.guard-block-detail { margin: 9px 0 0; padding-top: 8px; border-top: 1px solid #e2e8f0; }
+.guard-block-axis { stroke: #94a3b8; stroke-width: 1; }
+.guard-block-active { fill: #f1f5f9; }
+.guard-block-charge { fill: #0284c7; }
+.guard-block-discharge { fill: #ea580c; }
+.guard-block-outside { fill: #94a3b8; opacity: .55; }
+.guard-block-label { fill: #334155; font-size: 10px; }
+.guard-block-scale { fill: #64748b; font-size: 9px; }
+.dark .guard-block-tooltip { background: #0f172a; color: #e2e8f0; border-color: #475569; }
+.dark .guard-block-heading, .dark .guard-block-label { color: #f1f5f9; fill: #e2e8f0; }
+.dark .guard-block-note, .dark .guard-block-scale { color: #94a3b8; fill: #94a3b8; }
+.dark .guard-block-active { fill: #1e293b; }
+.dark .guard-block-detail { border-color: #334155; }
+.dark .guard-block-charge { fill: #38bdf8; }
+.dark .guard-block-discharge { fill: #fb923c; }

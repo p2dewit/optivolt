@@ -167,7 +167,13 @@ describe('refreshPriceForecastAndPersist', () => {
   });
 
   it('fetches, parses, and persists the forecast series', async () => {
-    loadSettings.mockResolvedValue({ extendedHorizonDays: 3, priceForecastUrl: 'https://example.com/forecast.json' });
+    loadSettings.mockResolvedValue({ extendedHorizonDays: 3, priceForecastUrl: 'https://example.com/forecast.json',
+        energyTax_eur_per_kWh: 0,
+        buyCost_eur_per_kWh: 0,
+        sellCost_eur_per_kWh: 0,
+        vat_percent: 0,
+        netMetering: false,
+      });
     loadData.mockResolvedValue({ existing: true });
     global.fetch.mockResolvedValue({
       ok: true,

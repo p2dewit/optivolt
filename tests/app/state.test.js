@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hydrateUI, snapshotUI, updatePlanMeta, updateRebalanceNudgeUI, updateSummaryUI } from '../../app/src/state.js';
+import { hydrateUI, snapshotUI, updatePlanCostsUI, updatePlanMeta, updateRebalanceNudgeUI, updateSummaryUI } from '../../app/src/state.js';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -39,67 +39,44 @@ describe('settings state', () => {
     expect(snapshotUI(els).evTripSocBuffer_percent).toBe(25);
   });
 
-  it('keeps the DESS table toggle out of persisted settings', () => {
+  it('persists and restores the DESS table toggle', () => {
     const tableDess = document.createElement('input');
     tableDess.type = 'checkbox';
     tableDess.checked = true;
 
-    expect(snapshotUI({ tableDess })).not.toHaveProperty('tableShowDess');
+    expect(snapshotUI({ tableDess }).tableShowDess).toBe(true);
 
     tableDess.checked = false;
     hydrateUI({ tableDess }, { tableShowDess: true });
 
-    expect(tableDess.checked).toBe(false);
+    expect(tableDess.checked).toBe(true);
   });
 
-  it('renders and clears net grid cost in the summary panel', () => {
-    vi.useFakeTimers();
-    document.body.innerHTML = '<div id="load-split-bar"></div><div id="flow-split-bar"></div>';
-
+  it('renders and clears the financial plan totals', () => {
     const els = {
-      sumLoad: document.createElement('div'),
-      sumPv: document.createElement('div'),
-      sumLoadGrid: document.createElement('div'),
-      sumLoadBatt: document.createElement('div'),
-      sumLoadPv: document.createElement('div'),
-      avgImport: document.createElement('div'),
-      netCost: document.createElement('div'),
-      gridBatteryTp: document.createElement('div'),
-      gridChargeTp: document.createElement('div'),
-      batteryExportTp: document.createElement('div'),
+      importCost: document.createElement('div'),
+      exportRevenue: document.createElement('div'),
+      batteryWearCost: document.createElement('div'),
+      netRevenue: document.createElement('div'),
     };
-    document.body.append(...Object.values(els));
 
-    updateSummaryUI(els, {
-      loadTotal_kWh: 1,
-      pvTotal_kWh: 2,
-      loadFromGrid_kWh: 0.5,
-      loadFromBattery_kWh: 0.25,
-      loadFromPv_kWh: 0.25,
-      gridToBattery_kWh: 0,
-      batteryToGrid_kWh: 0,
-      importEnergy_kWh: 0.5,
-      avgImportPrice_cents_per_kWh: 12.345,
-      netGridCost_cents: -4.2,
-      gridBatteryTippingPoint_cents_per_kWh: null,
-      gridChargeTippingPoint_cents_per_kWh: null,
-      batteryExportTippingPoint_cents_per_kWh: null,
-      pvExportTippingPoint_cents_per_kWh: null,
-      rebalanceStatus: 'disabled',
-      evChargeTotal_kWh: 0,
-      evChargeFromGrid_kWh: 0,
-      evChargeFromPv_kWh: 0,
-      evChargeFromBattery_kWh: 0,
-    });
-    vi.runAllTimers();
+    updatePlanCostsUI(els, [
+      {
+        importCost_cents: 10,
+        exportCost_cents: 20,
+        batteryWearCost_cents: 2,
+      },
+    ], 'green');
 
-    expect(els.avgImport.textContent).toBe('12.35 c€/kWh');
-    expect(els.netCost.textContent).toBe('-4.20 c€');
+    expect(els.importCost.textContent).not.toBe('');
+    expect(els.exportRevenue.textContent).not.toBe('');
+    expect(els.batteryWearCost.textContent).not.toBe('');
+    expect(els.netRevenue.textContent).not.toBe('');
+    expect(els.netRevenue.classList.contains('financial-positive')).toBe(true);
 
-    updateSummaryUI(els, null);
-    vi.runAllTimers();
+    updatePlanCostsUI(els, null, 'green');
 
-    expect(els.netCost.textContent).toBe('—');
+    expect(els.netRevenue.textContent).toBe('—');
   });
 
   it('shows tooltip text when the last full SoC timestamp is unknown', () => {

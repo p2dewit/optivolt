@@ -31,7 +31,10 @@ describe('plan store', () => {
   it('keeps the plan fields consumers read', () => {
     setPlan(payload);
 
-    expect(getPlan()).toEqual(payload);
+    expect(getPlan()).toEqual(expect.objectContaining(payload));
+    expect(getPlan().inputsCurrent).toBe(true);
+    expect(getPlan().computedAtMs).toEqual(expect.any(Number));
+    expect(getPlan().solverStatus).toBeNull();
     expect(getPlan().rows).toBe(payload.rows);
   });
 

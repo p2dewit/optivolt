@@ -36,7 +36,10 @@ function makeFlowsTooltip(rows, flowSpecs, h, showNetRevenue = false, cumulative
       const posRows = flowSpecs.filter(s => s.sign === 1  && (row[s.key] || 0) !== 0);
       const negRows = flowSpecs.filter(s => s.sign === -1 && (row[s.key] || 0) !== 0);
 
-      let html = ttHeader(time, `SoC <strong>${Math.round(row.soc_percent)}%</strong>`);
+      const meta = Number.isFinite(row.soc_percent)
+        ? `SoC <strong>${Math.round(row.soc_percent)}%</strong>`
+        : row.source === 'planned' ? 'Planned' : row.source === 'mixed' ? 'Actual + Planned' : 'Realized';
+      let html = ttHeader(time, meta);
 
       if (posRows.length) {
         html += ttSection("↑ Sources");
@@ -60,13 +63,15 @@ function makeFlowsTooltip(rows, flowSpecs, h, showNetRevenue = false, cumulative
         html += ttRow(SOLUTION_COLORS.b2g, "Revenue", new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(netRevenueEuro));
       }
       html += ttDivider();
-      html += ttPrices(`${row.ic.toFixed(1)}¢`, `${row.ec.toFixed(1)}¢`);
+      const buyPrice = Number.isFinite(row.ic) ? `${row.ic.toFixed(1)}¢` : '—';
+      const sellPrice = Number.isFinite(row.ec) ? `${row.ec.toFixed(1)}¢` : '—';
+      html += ttPrices(buyPrice, sellPrice);
       return html;
     },
   });
 }
 
-export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalanceWindow = null, evSettings = null, showNetRevenue = false) {
+export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalanceWindow = null, evSettings = null, showNetRevenue = false, nowMarker = null) {
   const timestampsMs = rows.map(r => r.timestampMs);
   const axis = buildTimeAxisFromTimestamps(timestampsMs);
   const mobileChart = (canvas.clientWidth || canvas.width) <= 640;
@@ -108,7 +113,8 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
   const cumulativeNetEuro = [];
   let cumulativeNetCents = 0;
   for (const row of rows) {
-    cumulativeNetCents += (row.exportCost_cents || 0) - (row.importCost_cents || 0) - (row.batteryWearCost_cents || 0);
+    if (Number.isFinite(row.cumulativeNetCents)) cumulativeNetCents = row.cumulativeNetCents;
+    else cumulativeNetCents += (row.exportCost_cents || 0) - (row.importCost_cents || 0) - (row.batteryWearCost_cents || 0);
     cumulativeNetEuro.push(cumulativeNetCents / 100);
   }
 
@@ -166,6 +172,29 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
     ? makeEvDeparturePlugin(rows, evSettings.departures)
     : null;
   if (depPlugin) plugins.push(depPlugin);
+  if (nowMarker && Number.isFinite(nowMarker.timestampMs)) {
+    plugins.push({
+      id: 'dayActualsNowMarker',
+      afterDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !scales.x) return;
+        const index = (nowMarker.timestampMs - nowMarker.startMs) / nowMarker.stepMs;
+        if (index < 0 || index > rows.length) return;
+        const x = scales.x.getPixelForValue(Math.min(index, rows.length - 0.5));
+        ctx.save();
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '600 11px sans-serif';
+        ctx.textAlign = x > chartArea.right - 48 ? 'right' : 'left';
+        ctx.fillText('Now', x + (x > chartArea.right - 48 ? -4 : 4), chartArea.top + 12);
+        ctx.restore();
+      },
+    });
+  }
 
   renderChart(canvas, {
     type: "bar",
@@ -209,6 +238,32 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
     }),
     plugins,
   });
+  // Mobile browsers do not always synthesize Chart.js' mousemove event for a
+  // tap on category charts. Resolve the nearest time slot directly on touch.
+  if (!canvas._flowTouchTooltipInstalled) {
+    const showNearestSlot = event => {
+      if (event.pointerType && event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+      const chart = canvas._chart;
+      if (!chart?.chartArea || !chart.data.datasets.length) return;
+      const x = event.offsetX;
+      const y = event.offsetY;
+      if (x < chart.chartArea.left || x > chart.chartArea.right || y < chart.chartArea.top || y > chart.chartArea.bottom) return;
+      const scale = chart.scales.x;
+      let index = 0;
+      let minDistance = Infinity;
+      for (let i = 0; i < chart.data.labels.length; i += 1) {
+        const distance = Math.abs(scale.getPixelForValue(i) - x);
+        if (distance < minDistance) { minDistance = distance; index = i; }
+      }
+      const active = chart.data.datasets.map((_dataset, datasetIndex) => ({ datasetIndex, index }));
+      chart.setActiveElements(active);
+      chart.tooltip.setActiveElements(active, { x, y });
+      chart.update('none');
+    };
+    canvas.addEventListener('pointerdown', showNearestSlot, { passive: true });
+    canvas.addEventListener('pointerup', showNearestSlot, { passive: true });
+    canvas._flowTouchTooltipInstalled = true;
+  }
 }
 
 export function drawSocChart(canvas, rows, _stepSize_m = 15, evSettings = null) {

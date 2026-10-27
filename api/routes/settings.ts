@@ -1,3 +1,4 @@
+import { releaseDynamicEssToVrm, ensureDynamicEssMode4 } from '../services/mqtt-service.ts';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { assertCondition, toHttpError } from '../http-errors.ts';
@@ -23,6 +24,7 @@ import {
 } from '../services/all-in-prices.ts';
 
 const router = express.Router();
+let vrmHandoverPending = false;
 
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
@@ -62,6 +64,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     // Re-read so the response and all subsequent calculations use clamped settings.
     const savedSettings = await loadSettings();
+    let victronModeConfirmed: number | null = null;
+    if (incoming.pushToVictronEnabled === false && (prevSettings.pushToVictronEnabled || vrmHandoverPending)) {
+      vrmHandoverPending = true;
+      await releaseDynamicEssToVrm();
+      vrmHandoverPending = false;
+      victronModeConfirmed = 1;
+    }
+    if (incoming.pushToVictronEnabled === true) {
+      await ensureDynamicEssMode4();
+      victronModeConfirmed = 4;
+    }
     const priceSettingsChanged = savedSettings.energyTax_eur_per_kWh !== prevSettings.energyTax_eur_per_kWh
       || savedSettings.buyCost_eur_per_kWh !== prevSettings.buyCost_eur_per_kWh
       || savedSettings.sellCost_eur_per_kWh !== prevSettings.sellCost_eur_per_kWh
@@ -79,7 +92,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // Reported so the client can re-read the stored series: the Predictions tab
     // caches them, and would otherwise show the old window until a manual
     // forecast run or a page reload.
-    res.json({ message: 'Settings saved successfully.', settings: redactSettingsForClient(savedSettings), forecastsRefreshed, pricesRecalculated });
+    res.json({ message: 'Settings saved successfully.', settings: redactSettingsForClient(savedSettings), forecastsRefreshed, pricesRecalculated, victronModeConfirmed });
   } catch (error) {
     next(toHttpError(error, 500, 'Failed to save settings'));
   }

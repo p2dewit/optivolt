@@ -58,6 +58,17 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         400,
         `'${key}' must be a JSON object`,
       );
+      // Validate incoming price series before applying all-in conversion.
+      // Otherwise a missing values array causes a TypeError and HTTP 500.
+      if (key === 'importPrice' || key === 'exportPrice') {
+        const series = value as Record<string, unknown>;
+        assertCondition(
+          Array.isArray(series.values),
+          400,
+          `'${key}.values' must be an array`,
+        );
+      }
+
       if (key === 'soc') {
         nextData.soc = value as SocData;
       } else if (key === 'importPrice') {

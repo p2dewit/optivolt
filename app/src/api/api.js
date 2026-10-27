@@ -67,3 +67,5 @@ export const fetchForecastAccuracy = () => getJson('/forecast-accuracy');
 export const fetchLiveBlockGuardStatus = () => getJson('/live-block-guard');
 export const refreshLiveBlockGuard = () => postJson('/live-block-guard/refresh', {});
 export const updateLiveBlockGuardMonitorPlan = (plan) => postJson('/live-block-guard/monitor-plan', { plan });
+export const fetchVictronMode = () => getJson('/victron/mode');
+export const fetchDayActuals = (dateKey) => getJson(`/day-actuals${dateKey ? `?date=${encodeURIComponent(dateKey)}` : ''}`);

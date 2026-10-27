@@ -20,6 +20,7 @@ vi.mock('../../api/services/vrm-refresh.ts', async (importOriginal) => {
   };
 });
 vi.mock('../../api/services/planner-service.ts', () => ({
+  computePlan: vi.fn().mockResolvedValue({}),
   planAndMaybeWrite: vi.fn().mockResolvedValue({
     cfg: { initialSoc_percent: 50 },
     data: { tsStart: '2024-01-01T00:00:00Z', load: { start: '2024-01-01T00:00:00Z' } },
@@ -55,7 +56,12 @@ describe('Custom Data Injection', () => {
     });
     saveData.mockResolvedValue();
     loadSettings.mockResolvedValue({
-      dataSources: { prices: 'api', load: 'api', pv: 'api', soc: 'api' } // allow custom data in tests
+      dataSources: { prices: 'api', load: 'api', pv: 'api', soc: 'api' },
+        energyTax_eur_per_kWh: 0,
+        buyCost_eur_per_kWh: 0,
+        sellCost_eur_per_kWh: 0,
+        vat_percent: 0,
+        netMetering: false,
     });
     saveSettings.mockResolvedValue();
   });

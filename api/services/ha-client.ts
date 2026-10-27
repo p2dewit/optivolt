@@ -69,6 +69,56 @@ export async function fetchHaEntityState({
   return res.json() as Promise<HaEntityState>;
 }
 
+interface FetchHaHistoryOptions {
+  haUrl: string;
+  haToken: string;
+  entityIds: string[];
+  startTime: string;
+  endTime: string;
+  timeoutMs?: number;
+}
+
+/** Fetch short-term recorder states for entities whose value changes over time. */
+export async function fetchHaHistory({
+  haUrl,
+  haToken,
+  entityIds,
+  startTime,
+  endTime,
+  timeoutMs = 30000,
+}: FetchHaHistoryOptions): Promise<HaEntityState[][]> {
+  const addonToken = supervisorToken();
+  const baseUrl = addonToken ? 'http://supervisor/core' : wsUrlToHttp(haUrl);
+  const token: string = addonToken ?? haToken;
+  const url = new URL(`${baseUrl}/api/history/period/${encodeURIComponent(startTime)}`);
+  url.searchParams.set('filter_entity_id', entityIds.join(','));
+  url.searchParams.set('end_time', endTime);
+  const res = await fetchWithTimeout(url,
+    { headers: { Authorization: `Bearer ${token}` } },
+    { timeoutMs, label: 'Home Assistant recorder history request' });
+  if (!res.ok) throw new Error(`HA returned ${res.status} for recorder history`);
+  const history = await res.json() as unknown;
+  if (!Array.isArray(history)) throw new Error('HA returned an invalid recorder history response');
+  return history as HaEntityState[][];
+}
+
+export async function fetchHaTimeZone({
+  haUrl,
+  haToken,
+  timeoutMs = HA_ENTITY_TIMEOUT_MS,
+}: Omit<FetchHaEntityStateOptions, 'entityId'>): Promise<string> {
+  const addonToken = supervisorToken();
+  const baseUrl = addonToken ? 'http://supervisor/core' : wsUrlToHttp(haUrl);
+  const token: string = addonToken ?? haToken;
+  const res = await fetchWithTimeout(`${baseUrl}/api/config`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    { timeoutMs, label: 'Home Assistant config request' });
+  if (!res.ok) throw new Error(`HA returned ${res.status} for its configuration`);
+  const config = await res.json() as { time_zone?: unknown };
+  if (typeof config.time_zone !== 'string' || !config.time_zone) throw new Error('HA did not return a time zone');
+  return config.time_zone;
+}
+
 interface FetchHaStatsOptions {
   haUrl: string;
   haToken: string;

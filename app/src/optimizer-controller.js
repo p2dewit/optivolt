@@ -1,3 +1,4 @@
+import { mountGuardBlockTooltip } from "./live-block-guard-tooltip.js";
 import {
   drawFlowsBarStackSigned,
   drawSocChart,
@@ -73,6 +74,7 @@ export function createOptimizerController({
     ...services,
   };
 
+  const guardTooltip = mountGuardBlockTooltip(els.liveBlockGuardStatus);
   const viewToggles = mountViewToggles(els.optimizerViewToggles);
   if (els.showNetRevenue) {
     let enabled = false;
@@ -154,6 +156,7 @@ export function createOptimizerController({
       await updateLiveBlockGuardMonitorPlan(monitorPlan);
       if (refreshBackend) await requestLiveBlockGuardRefresh();
       const status = await fetchLiveBlockGuardStatus();
+      guardTooltip.update(status);
       const isPercent = (value) => typeof value === "number" && Number.isFinite(value);
       const roundedPercent = (value) => String(Math.round(value)) + "%";
       const monitorMode = status.mode === "monitor";
@@ -172,7 +175,10 @@ export function createOptimizerController({
           + " target to " + roundedPercent(status.proposedTarget_percent) : "";
       const reason = status.reason;
       els.liveBlockGuardStatus.textContent = `${displayStatus}${soc}${victronTarget}${planTarget}${proposal}${reason ? ` — ${reason}` : ""}`;
-    } catch { els.liveBlockGuardStatus.textContent = "Guard status temporarily unavailable"; }
+    } catch {
+      guardTooltip.update(null);
+      els.liveBlockGuardStatus.textContent = "Guard status temporarily unavailable";
+    }
   }
   void refreshLiveBlockGuardStatus();
   setInterval(() => { void refreshLiveBlockGuardStatus(); }, 30_000);
@@ -229,7 +235,7 @@ export function createOptimizerController({
 
     setPlan(result);
     if (els.status) {
-      els.status.textContent = "Loaded existing plan";
+      els.status.textContent = `Loaded existing plan${formatPlanTime(result.computedAtMs)}`;
       els.status.className = "text-sm font-medium text-ink dark:text-slate-100";
     }
     return result;
@@ -284,12 +290,12 @@ export function createOptimizerController({
       // A throw while drawing it is a display failure, not a planning failure, so it must not
       // fall through to the outer catch and wipe a summary that computed fine.
       try {
-        updateRunStatus(solverStatus, writeToVictron);
+        updateRunStatus(solverStatus, writeToVictron, result?.computedAtMs);
         setPlan(result);
       } catch (renderError) {
         console.error("Failed to render plan", renderError);
         if (els.status) {
-          els.status.textContent = `Plan calculated, but display failed: ${renderError.message}`;
+          els.status.textContent = `Plan calculated, but display failed${formatPlanTime(result?.computedAtMs)}: ${renderError.message}`;
           els.status.className = "text-sm font-medium text-amber-600 dark:text-amber-400";
         }
       }
@@ -371,6 +377,15 @@ export function createOptimizerController({
       // The Predictions tab caches those series, so it has to re-read them or
       // it keeps charting the old window until a manual run or a reload.
       if (result?.forecastsRefreshed) await onForecastsRefreshed();
+      if (els.status) {
+        if (result?.victronModeConfirmed === 1) {
+          els.status.textContent =
+            "Push disabled · Victron DESS mode 1 (VRM) confirmed";
+        } else if (result?.victronModeConfirmed === 4) {
+          els.status.textContent =
+            "Victron DESS mode 4 confirmed · Preparing plan push…";
+        }
+      }
       return true;
     } catch (error) {
       console.error("Failed to persist settings", error);
@@ -383,13 +398,32 @@ export function createOptimizerController({
     persistConfigDebounced(deps.snapshotUI(els));
   }
 
-  async function onGuardSettingsChange() {
-    if (els.liveBlockGuardStatus) els.liveBlockGuardStatus.textContent = "Updating guard status…";
-    if (typeof persistConfigDebounced.cancel === "function") persistConfigDebounced.cancel();
-    if (await persistConfig()) await refreshLiveBlockGuardStatus(true);
+  async function onGuardSettingsChange(event) {
+    const pushEnabled =
+      event?.currentTarget === els.pushToVictron &&
+      els.pushToVictron.checked === true;
+
+    if (els.liveBlockGuardStatus) {
+      els.liveBlockGuardStatus.textContent = "Updating guard status…";
+    }
+
+    if (typeof persistConfigDebounced.cancel === "function") {
+      persistConfigDebounced.cancel();
+    }
+
+    const saved = await persistConfig();
+    if (!saved) return;
+
+    await refreshLiveBlockGuardStatus(true);
+
+    // Only enabling Push triggers an automatic recompute.
+    // OFF keeps the existing mode-1 handover behavior.
+    if (pushEnabled && els.pushToVictron.checked) {
+      await onRun();
+    }
   }
 
-  function updateRunStatus(solverStatus, writeToVictron) {
+  function updateRunStatus(solverStatus, writeToVictron, computedAtMs) {
     if (!els.status) return;
 
     const nonOptimal =
@@ -400,15 +434,25 @@ export function createOptimizerController({
     let colorClass = "text-emerald-600 dark:text-emerald-400";
 
     if (nonOptimal) {
-      label = `Plan status: ${solverStatus}`;
+      label = `Plan status: ${solverStatus}${formatPlanTime(computedAtMs)}`;
       colorClass = "text-amber-600 dark:text-amber-400";
     } else if (writeToVictron) {
-      label = "Plan updated and sent to Victron";
+      label = `Plan updated and sent to Victron${formatPlanTime(computedAtMs)}`;
     } else {
-      label = "Plan updated";
+      label = `Plan updated${formatPlanTime(computedAtMs)}`;
     }
     els.status.textContent = label;
     els.status.className = `text-sm font-medium ${colorClass}`;
+  }
+
+  function formatPlanTime(timestampMs) {
+    if (!Number.isFinite(timestampMs)) return "";
+    const time = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(timestampMs));
+    return ` (${time})`;
   }
 
   function getVizConfig() {

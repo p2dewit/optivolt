@@ -128,6 +128,7 @@ describe('optimizer controller', () => {
       30,
       rebalanceWindow,
       tableArgs.evSettings,
+      false,
     );
     expect(services.drawSocChart).toHaveBeenCalledWith(els.soc, rows, 30, tableArgs.evSettings);
     expect(services.drawPricesStepLines).toHaveBeenCalledWith(els.prices, rows, 30, null);

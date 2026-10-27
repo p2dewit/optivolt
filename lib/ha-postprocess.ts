@@ -27,7 +27,9 @@ export interface StatRecord {
 
 export interface HaReading {
   start: number;
+  end?: number;
   change?: number;
+  mean?: number;
 }
 
 /**

@@ -1,20 +1,18 @@
 import { loadSettings } from './settings-store.ts';
-import { readVictronActiveDynamicEssTarget, readVictronSocPercent, writeDynamicEssSlotSocTarget } from './mqtt-service.ts';
+import { ensureDynamicEssMode4, readVictronActiveDynamicEssTarget, readVictronSocPercent, writeDynamicEssSlotSocTarget } from './mqtt-service.ts';
 import { getLastPlan, isLastPlanPushedToVictron } from './planner-service.ts';
-import type { Settings } from '../types.ts';
+import { chargingPower, dischargingPower, describeLiveBlock, type Direction } from './live-block-detection.ts';
 
 const POLL_MS = 60_000;
-const HIGH_POWER_FRACTION = 0.75;
 const SOC_TRIGGER_MARGIN = 1;
 const SOC_EPSILON = 0.5;
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
-type Direction = 'charge' | 'discharge';
 let lastAdjustment: { planAt: number; blockEnd: number; direction: Direction; target: number } | null = null;
 const state: Record<string, unknown> = {
   mode: 'off', soc_percent: null, activeTarget_percent: null, plannedTarget_percent: null, observedAt: null, status: 'Off',
-  reason: null, proposedTarget_percent: null, writtenTarget_percent: null,
-  direction: null, triggerTarget_percent: null, blockEndAt: null,
+  reason: null, proposedTarget_percent: null, writtenTarget_percent: null, adjustmentDue: null,
+  direction: null, triggerTarget_percent: null, blockEndAt: null, blockPreview: null,
 };
 
 type MonitorPlanRow = {
@@ -33,7 +31,6 @@ type MonitorPlan = {
   rows: MonitorPlanRow[];
 };
 let uiMonitorPlan: { plan: MonitorPlan; receivedAtMs: number } | null = null;
-let uiMonitorPlanReportedAtMs: number | null = null;
 
 function parseMonitorPlan(input: unknown): MonitorPlan | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
@@ -83,7 +80,6 @@ function getUiMonitorPlan(): MonitorPlan | undefined {
 }
 
 export async function setLiveBlockGuardMonitorPlan(input: unknown): Promise<boolean> {
-  uiMonitorPlanReportedAtMs = Date.now();
   const candidate = parseMonitorPlan(input);
   if (!candidate) {
     const hadPlan = uiMonitorPlan != null;
@@ -104,29 +100,6 @@ export async function refreshLiveBlockGuard(): Promise<void> {
   await tick();
 }
 
-type PowerRow = { g2b: number; pv2b: number; b2l?: number; b2g?: number; b2ev?: number };
-
-function chargingPower(row: PowerRow): number {
-  return Math.max(0, row.g2b + row.pv2b);
-}
-
-function dischargingPower(row: PowerRow): number {
-  return Math.max(0, (row.b2l ?? 0) + (row.b2g ?? 0) + (row.b2ev ?? 0));
-}
-
-function highPower(row: PowerRow, direction: Direction, settings: Settings): boolean {
-  const limit = direction === 'charge' ? settings.maxChargePower_W : settings.maxDischargePower_W;
-  const power = direction === 'charge' ? chargingPower(row) : dischargingPower(row);
-  return Number.isFinite(limit) && limit > 0 && power > 0 && power >= limit * HIGH_POWER_FRACTION;
-}
-
-function blockDirection(row: PowerRow, settings: Settings): Direction | null {
-  const charge = highPower(row, 'charge', settings);
-  const discharge = highPower(row, 'discharge', settings);
-  // A simultaneous high charge/discharge row has no unambiguous block target.
-  return charge === discharge ? null : charge ? 'charge' : 'discharge';
-}
-
 async function tick(): Promise<void> {
   if (running) return;
   running = true;
@@ -134,11 +107,13 @@ async function tick(): Promise<void> {
     const settings = await loadSettings();
     state.mode = settings.liveBlockGuardMode;
     state.proposedTarget_percent = null;
+    state.adjustmentDue = null;
     state.writtenTarget_percent = null;
     state.plannedTarget_percent = null;
     state.direction = null;
     state.triggerTarget_percent = null;
     state.blockEndAt = null;
+    state.blockPreview = null;
     if (settings.liveBlockGuardMode !== 'automatic' || !settings.pushToVictronEnabled) lastAdjustment = null;
     if (settings.liveBlockGuardMode === 'off') {
       state.status = 'Off'; state.reason = null;
@@ -156,11 +131,20 @@ async function tick(): Promise<void> {
     state.observedAt = new Date().toISOString();
     if (soc == null) { state.status = 'SoC unavailable'; state.reason = 'No current SoC received from Victron MQTT'; return; }
 
-    const hasRecentUiReport = uiMonitorPlanReportedAtMs != null
-      && Date.now() - uiMonitorPlanReportedAtMs <= 10 * 60_000;
-    const plan = settings.liveBlockGuardMode === 'monitor' && hasRecentUiReport
-      ? getUiMonitorPlan()
-      : getLastPlan();
+    // Both modes recognize the same plan. Prefer the authoritative server
+    // plan when its represented four slots still cover now. Browser fallback
+    // is display-only and can never authorize a physical target write.
+    const serverPlan = getLastPlan();
+    const coversNow = (candidate: MonitorPlan | undefined | null) => {
+      if (!candidate || candidate.result.Status !== 'Optimal') return false;
+      const step = candidate.timing.stepMin * 60_000;
+      const slot = Math.floor((Date.now() - candidate.timing.startMs) / step);
+      const row = candidate.rows[slot];
+      return step > 0 && slot >= 0 && slot < 4 && row != null
+        && Date.now() >= row.timestampMs && Date.now() < row.timestampMs + step;
+    };
+    const plan = coversNow(serverPlan as MonitorPlan | undefined)
+      ? serverPlan : getUiMonitorPlan();
     if (!plan || plan.result.Status !== 'Optimal') {
       if (settings.liveBlockGuardMode === 'monitor') {
         state.status = 'Monitor: no valid OptiVolt plan';
@@ -170,16 +154,8 @@ async function tick(): Promise<void> {
       }
       return;
     }
-    if (!isLastPlanPushedToVictron()) {
-      lastAdjustment = null;
-      if (settings.liveBlockGuardMode !== 'monitor') {
-        state.status = 'Monitoring SoC; plan not sent to Victron';
-        state.reason = 'There is no confirmed schedule write for this plan';
-        return;
-      }
-      // Monitor mode evaluates the current optimizer plan even when no schedule
-      // was pushed; this path never writes to Victron.
-    }
+    const confirmedServerPlan = plan === serverPlan && isLastPlanPushedToVictron();
+    if (!confirmedServerPlan) lastAdjustment = null;
 
     const stepMs = plan.timing.stepMin * 60_000;
     const now = Date.now();
@@ -191,23 +167,30 @@ async function tick(): Promise<void> {
     state.plannedTarget_percent = row.dess.socTarget_percent;
     const currentTarget = Math.round(row.dess.socTarget_percent);
     const victronTarget = state.activeTarget_percent;
-    const direction = blockDirection(row, settings);
-    state.direction = direction ?? (dischargingPower(row) > chargingPower(row) ? 'discharge'
-      : chargingPower(row) > dischargingPower(row) ? 'charge' : 'idle');
-    if (direction == null) {
-      state.status = 'Monitoring SoC; no unambiguous high-power block';
-      state.reason = 'The guard requires at least 75% of the configured charging or discharging limit in one direction';
+    const block = describeLiveBlock(plan.rows, index, soc, settings, stepMs);
+    state.blockPreview = block;
+    const direction = block.direction;
+    state.direction = block.activeDirection ?? 'idle';
+    // A future preview must never change the active or future Victron targets.
+    if (block.isFuture) {
+      const futureLabel = direction === 'charge' ? 'charging' : 'discharging';
+      state.status = `Monitoring SoC; future ${futureLabel} block recognized`;
+      state.reason = `Slots ${block.startIndex + 1}–${block.endIndex + 1} form a future ${futureLabel} block; preview only until the block becomes active`;
+      return;
+    }
+    if (!block.recognized || direction == null) {
+      state.status = 'Monitoring SoC; no qualifying continuous block';
+      state.reason = direction == null
+        ? 'The active slot is idle or has simultaneous charging and discharging'
+        : 'No high-power slot in the continuous block, and current SoC is outside the taper region';
       return;
     }
     const label = direction === 'charge' ? 'charging' : 'discharging';
-
-    let blockEnd = index;
-    while (blockEnd + 1 < plan.rows.length && blockEnd + 1 < 4
-      && blockDirection(plan.rows[blockEnd + 1], settings) === direction) blockEnd += 1;
+    const blockEnd = block.endIndex;
     state.blockEndAt = new Date(plan.rows[blockEnd].timestampMs + stepMs).toISOString();
     if (blockEnd === index) {
       state.status = `Monitoring SoC; the ${label} block ends in this slot`;
-      state.reason = `There is no consecutive high-power ${label} slot; the planned end target is retained`;
+      state.reason = `There is no consecutive ${label} slot; the planned end target is retained`;
       return;
     }
 
@@ -217,11 +200,9 @@ async function tick(): Promise<void> {
     // target may differ from the optimizer's current slot target.
     const triggerTarget = direction === 'charge' ? Math.min(currentTarget, activeTarget) : Math.max(currentTarget, activeTarget);
     state.triggerTarget_percent = triggerTarget;
-    if (direction === 'charge' ? soc < triggerTarget - SOC_TRIGGER_MARGIN : soc > triggerTarget + SOC_TRIGGER_MARGIN) {
-      state.status = `Monitoring SoC; waiting for the ${label} target`;
-      state.reason = `No adjustment is due until SoC comes within ${SOC_TRIGGER_MARGIN} percentage point of ${Math.round(triggerTarget)}%; the guard would ${direction === 'charge' ? 'raise' : 'lower'} the target to continue this block`;
-      return;
-    }
+    const adjustmentDue = direction === 'charge'
+      ? soc >= triggerTarget - SOC_TRIGGER_MARGIN : soc <= triggerTarget + SOC_TRIGGER_MARGIN;
+    state.adjustmentDue = adjustmentDue;
 
     const capacityWh = settings.batteryCapacity_Wh;
     const chargeEfficiency = settings.chargeEfficiency_percent / 100;
@@ -265,6 +246,11 @@ async function tick(): Promise<void> {
     }
 
     state.proposedTarget_percent = target;
+    if (!adjustmentDue) {
+      state.status = `Monitoring SoC; waiting for the ${label} target`;
+      state.reason = `No adjustment is due until SoC comes within ${SOC_TRIGGER_MARGIN} percentage point of ${Math.round(triggerTarget)}%; estimated next target ${target}%, recalculated when the guard next checks`;
+      return;
+    }
     if (settings.liveBlockGuardMode !== 'automatic') {
       state.status = `Monitor: would ${direction === 'charge' ? 'raise' : 'lower'} the target for the ${label} block`;
       state.reason = `Plan target ${currentTarget}% → proposed target ${target}% through the end of the ${label} block; nothing is written in monitor mode`;
@@ -273,6 +259,12 @@ async function tick(): Promise<void> {
     if (!settings.pushToVictronEnabled) {
       state.status = 'Automatic adjustment blocked: Push schedule to Victron is off';
       state.reason = `Proposed target ${Math.round(target)}%; nothing was written to Victron`;
+      return;
+    }
+
+    if (!confirmedServerPlan) {
+      state.status = 'Automatic adjustment blocked: plan not confirmed as sent to Victron';
+      state.reason = `Block recognition and proposed target ${Math.round(target)}% are preview only; no targets were written`;
       return;
     }
 
@@ -291,6 +283,10 @@ async function tick(): Promise<void> {
       state.reason = 'No targets were written; the guard will re-evaluate the current block';
       return;
     }
+    // Automatic mode extends the target as soon as the active block is known.
+    // Waiting until the old target is almost reached leaves a race at a slot
+    // boundary: Venus may go idle before the next one-minute guard tick.
+    await ensureDynamicEssMode4();
     // Only update the active and remaining slots in this contiguous block.
     for (let i = index; i <= blockEnd; i += 1) await writeDynamicEssSlotSocTarget(i, target);
     lastAdjustment = { planAt: plan.computedAtMs, blockEnd, direction, target };

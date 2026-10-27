@@ -1,3 +1,4 @@
+import { mountForecastAccuracyTooltip } from "./src/forecast-accuracy-tooltip.js";
 import { refreshVrmSettings, fetchForecastAccuracy } from "./src/api/api.js";
 import { loadInitialConfig } from "./src/config-store.js";
 import { initPredictionsTab, reloadStoredForecasts } from "./src/predictions.js";
@@ -18,6 +19,10 @@ import {
   hydrateUI,
   updateTerminalCustomUI,
 } from "./src/state.js";
+import { initDayActuals } from "./src/day-actuals.js";
+import { initVictronModeIndicator } from "./src/victron-mode.js";
+
+const accuracyTooltip = mountForecastAccuracyTooltip(document.getElementById("forecast-accuracy"));
 
 // ---------- Helpers ----------
 async function refreshForecastAccuracy() {
@@ -29,9 +34,7 @@ async function refreshForecastAccuracy() {
     if (value) value.textContent = Number.isFinite(result.scorePercent)
       ? Math.round(result.scorePercent) + "%"
       : "—";
-    element.title = result.days
-      ? "Day-ahead betrouwbaarheid: " + Math.round(result.scorePercent) + "% op basis van " + result.days + " volledige leveringsdagen (laatste " + result.windowDays + " dagen, 100% − WAPE)."
-      : "Nog geen volledige leveringsdagen vergeleken; de meting bouwt zich vanaf nu op.";
+    accuracyTooltip.update(result);
     element.dataset.days = String(result.days || 0);
   } catch (error) {
     console.warn("Could not load forecast accuracy:", error);
@@ -138,6 +141,8 @@ async function boot() {
   const { config: initialConfig, source } = await loadInitialConfig();
 
   hydrateUI(els, initialConfig);
+  initDayActuals(els);
+  initVictronModeIndicator(els);
   optimizer.hydrateChartPreferences(initialConfig);
   // Migrate existing browser chart choices once; thereafter the server wins.
   if (source === "api" && (initialConfig.chartViewRange == null

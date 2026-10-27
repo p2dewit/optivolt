@@ -125,6 +125,10 @@ export function aggregateRowsHourly(rows, stepSize_m = 15) {
     .map(({ rows: slotRows, hourMs }, bucketIdx) => {
       const last = slotRows[slotRows.length - 1];
       const out = { ...last, tIdx: bucketIdx, timestampMs: hourMs };
+      if (slotRows.some(row => row.source)) {
+        const sources = new Set(slotRows.map(row => row.source).filter(Boolean));
+        out.source = sources.size > 1 ? "mixed" : [...sources][0];
+      }
       for (const key of ENERGY_MEAN_KEYS) {
         out[key] = slotRows.reduce((sum, r) => sum + (Number(r[key]) || 0), 0) / slotsPerHour;
       }
@@ -132,7 +136,8 @@ export function aggregateRowsHourly(rows, stepSize_m = 15) {
         out[key] = slotRows.reduce((sum, r) => sum + (Number(r[key]) || 0), 0);
       }
       for (const key of SLOT_MEAN_KEYS) {
-        out[key] = slotRows.reduce((sum, r) => sum + (Number(r[key]) || 0), 0) / slotRows.length;
+        const knownPrices = slotRows.map(r => r[key]).filter(Number.isFinite);
+        out[key] = knownPrices.length ? knownPrices.reduce((sum, value) => sum + value, 0) / knownPrices.length : null;
       }
       // A SoC deadline pinned mid-hour would otherwise be lost to the {...last}
       // spread; the strictest one in the bucket represents the hour.
