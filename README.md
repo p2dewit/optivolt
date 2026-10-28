@@ -1,71 +1,71 @@
 # OptiVolt 🔋
 
-## Aanpassingen in deze fork — OptiVolt DESS 1.0
+## Changes in this fork — OptiVolt DESS 1.0
 
-Deze fork bouwt voort op [bmesuere/optivolt](https://github.com/bmesuere/optivolt), met upstream-commit `410a954` als vertrekpunt. Onderstaande uitbreidingen beschrijven de lokale broncode, inclusief de wijzigingen van 26 oktober 2026. De oorspronkelijke functionaliteit en installatie-instructies staan verderop. Versie **1.0** in de paginakop is de versieaanduiding van deze persoonlijke fork.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.0** in the page header identifies this personal fork.
 
-### Prijzen, strategieën en opbrengsten
+### Prices, strategies, and returns
 
-- **All-in tarieven:** energiebelasting, inkoopopslag, verkoopkosten, btw en een salderingsoptie worden centraal toegepast op API-prijzen en prijsvoorspellingen. De basisprijsreeksen blijven bewaard, zodat gewijzigde tariefinstellingen opnieuw kunnen worden toegepast zonder dubbel te rekenen. De tariefinstellingen zijn in €/kWh; de prijsreeksen gebruiken cent/kWh.
-- **Import:** `(basisprijs + inkoopopslag + energiebelasting) × btw-factor`. **Export:** `(basisprijs − verkoopkosten + eventuele energiebelasting bij salderen) × btw-factor`, met bedragen naar dezelfde eenheid omgerekend. Dit is de geïmplementeerde rekenregel; vul de waarden volgens je eigen contract in.
-- **Nieuwe API-prijzen verversen de planning:** na het opslaan wordt opnieuw gerekend. Deze automatische herberekening schrijft zelf geen planning naar Victron.
-- **Voorspellingen uit HTTP(S) of een lokaal `file:`-bestand:** de ingestelde forecastfeed kan de horizon voorbij de bekende prijzen aanvullen. Werkelijke prijzen blijven leidend. De uitgebreide horizon zelf bestond al upstream.
-- **Aggressive en Green:** Aggressive behoudt de economische optimalisatie. Green geeft eigen verbruik en het opslaan van zonne-energie extra prioriteit, beperkt netladen boven de ingestelde maximuminkoopprijs en batterij-export onder de minimumverkoopprijs. Zachte reserve-SoC-doelen rond de voorspelde zonneproductie helpen de nacht en ochtend te overbruggen; het zijn geen onvoorwaardelijke garanties.
-- **Netto-opbrengst in de energiegrafiek:** optionele cumulatieve lijn met exportopbrengst minus importkosten en berekende batterijslijtage, met eurobedragen in de tooltip. Dit is een planningsresultaat, geen gemeten of gefactureerde opbrengst.
+- **All-in tariffs:** Energy tax, import surcharge, selling costs, VAT, and a net-metering option are applied centrally to API prices and price forecasts. The base price series are retained so that tariff changes can be reapplied without double counting. Tariff settings use €/kWh; price series use cents/kWh.
+- **Import:** `(base price + import surcharge + energy tax) × VAT factor`. **Export:** `(base price − selling costs + any energy tax under net metering) × VAT factor`, with amounts converted to the same unit. This is the implemented calculation; enter values that match your own contract.
+- **New API prices refresh the plan:** saving the settings triggers a new calculation. This automatic recalculation does not write a plan to Victron.
+- **Forecasts from HTTP(S) or a local `file:` source:** the configured forecast feed can extend the horizon beyond known prices. Actual prices remain authoritative. The extended horizon itself was already present upstream.
+- **Aggressive and Green:** Aggressive retains the economic optimization. Green gives additional priority to self-consumption and storing solar energy, limits grid charging above the configured maximum purchase price, and limits battery exports below the minimum selling price. Soft reserve-SoC targets around forecast solar production help bridge the night and morning; they are not unconditional guarantees.
+- **Net returns in the energy chart:** an optional cumulative line showing export revenue minus import costs and calculated battery wear, with euro amounts in the tooltip. This is a planning result, not measured or billed revenue.
 
-### Live block guard voor laden én ontladen
+### Live block guard for charging and discharging
 
-De guard controleert iedere **60 seconden** de actuele SoC en het Victron-doel. Hij bekijkt maximaal de vier beschikbare DESS-slots en herkent aaneengesloten laad- of ontlaadblokken. Het doel is te voorkomen dat een tussentijds SoC-doel zo'n blok te vroeg onderbreekt.
+Every **60 seconds**, the guard checks the current SoC and Victron target. It examines up to the four available DESS slots and detects consecutive charging or discharging blocks. Its purpose is to prevent an intermediate SoC target from interrupting such a block too early.
 
-- **Gelijke herkenning in Monitor en Automatic:** beide gebruiken dezelfde actuele serverplanning, met een browserplanning uitsluitend als vooruitblik wanneer geen actuele serverplanning beschikbaar is. Een ontbrekende pushbevestiging blokkeert automatisch schrijven, niet het tonen van herkende blokken.
-- **Off / Monitor / Automatic:** Monitor toont uitsluitend voorstellen. Automatic vereist ook ingeschakelde push en een bevestigde verzending van de actuele planning.
-- **Herkenning:** minstens één slot in het doorlopende blok bereikt 75% van de ingestelde vermogenslimiet. Dit percentage is een herkenningscriterium, geen opdracht om op 75% te laden. Lagere vermogens aan de randen kunnen bij het blok horen.
-- **Afnemend vermogen:** bij laden vanaf 85% SoC en ontladen tot 15% SoC kunnen ook blokken met lagere vermogens worden herkend. Dit is een SoC-gebaseerde aanname, geen uitlezing van BMS-vermogenslimieten.
-- **Standbycompensatie telt niet als laden:** laadvermogen dat na rendement alleen het ingestelde standbyverlies compenseert, verbindt een rustslot niet met een later laadblok. Bijvoorbeeld: 42,105 W bij 95% rendement compenseert ongeveer 40 W verlies en vormt geen actieve laadstart.
-- **Vooruitblik zonder vroege aanpassing:** ook een toekomstig blok dat alleen in slot 4 zichtbaar is kan worden getoond. De guard stelt daarvoor nog geen nieuw huidig SoC-doel voor en schrijft niets totdat het blok actief is. Een enkel eindslot wordt niet verlengd als er geen volgend aangesloten slot beschikbaar is.
-- **Aanpassen binnen 1 procentpunt:** als het doel het actieve blok dreigt te onderbreken, wordt een nieuw doel berekend uit de resterende geplande energie, capaciteit en rendementen, binnen de SoC-grenzen. Dit is een SoC-marge, geen exacte voorspelling van één minuut tot het doel.
-- **Dubbele wijzigingen worden vermeden**, en vóór automatisch schrijven worden de relevante instellingen en planning opnieuw gecontroleerd.
+- **Consistent detection in Monitor and Automatic:** both modes use the same current server plan, using a browser plan only as a preview when no current server plan is available. Missing push confirmation prevents automatic writes, but does not prevent detected blocks from being displayed.
+- **Off / Monitor / Automatic:** Monitor displays suggestions only. Automatic also requires push to be enabled and the current plan to have been confirmed as sent.
+- **Detection:** at least one slot in the continuous block reaches 75% of the configured power limit. This percentage is a detection threshold, not a command to charge at 75%. Lower power at the block edges may still belong to the block.
+- **Tapering power:** when charging above 85% SoC or discharging below 15% SoC, blocks at lower power can also be detected. This is an SoC-based assumption, not a reading of BMS power limits.
+- **Standby compensation is not charging:** charging power that only compensates for configured standby losses after efficiency is applied does not connect an idle slot to a later charging block. For example, 42.105 W at 95% efficiency compensates for about 40 W of losses and does not count as an active charging start.
+- **Preview without early adjustment:** a future block visible only in slot 4 can still be displayed. The guard does not suggest a new current SoC target for it and does not write anything until the block becomes active. A single final slot is not extended when no following connected slot is available.
+- **Adjust within one percentage point:** if the target could interrupt the active block, a new target is calculated from the remaining planned energy, capacity, and efficiencies, within the SoC limits. This is an SoC margin, not an exact one-minute-to-target prediction.
+- **Duplicate changes are avoided**, and the relevant settings and plan are checked again before an automatic write.
 
-![Voorbeeld van de live-block-guardtooltip](docs/images/live-block-guard-example.png)
+![Example of the live block guard tooltip](docs/images/live-block-guard-example.png)
 
-*Screenshot van een geïsoleerd UI-voorbeeld met fictieve waarden. De balkjes tonen gepland vermogen: blauw laden, oranje ontladen, grijs buiten het blok. Het actuele slot is gemarkeerd. De huidige tooltip vermeldt daarnaast een voorgesteld of uitgevoerd nieuw SoC-doel, zowel bij verhogen als verlagen. Klik op de tooltip om hem te sluiten; Escape werkt ook.*
+*Screenshot of an isolated UI example with fictitious values. The bars show planned power: blue for charging, orange for discharging, and gray outside the block. The current slot is highlighted. The current tooltip also shows a suggested or applied new SoC target, whether increasing or decreasing it. Click the tooltip to close it; Escape also works.*
 
-### Overdracht tussen OptiVolt en Victron/VRM
+### Handoff between OptiVolt and Victron/VRM
 
-Bij een daadwerkelijke planning-push stelt deze fork eerst **Dynamic ESS-modus 4 (Node-RED)** in en leest de waarde terug via MQTT. Alleen na bevestiging worden de planningsslots verstuurd. Er zijn maximaal drie leespogingen; zonder bevestiging volgt een foutmelding.
+When a plan is actually pushed, this fork first sets **Dynamic ESS mode 4 (Node-RED)** and reads the value back over MQTT. Plan slots are sent only after confirmation. Up to three read attempts are made; a failure to confirm results in an error.
 
-Bij het uitzetten van **Push to Victron** wordt push eerst opgeslagen als uitgeschakeld. Daarna stelt OptiVolt **modus 1 (Auto/VRM)** in en controleert ook die overdracht. De interface meldt bevestiging of een fout. Bij een mislukte overdracht blijft push uit; een volgende instellingenopslag kan tijdens dezelfde serverrun opnieuw proberen. Planning- en guard-writes worden geserialiseerd met de overdracht, zodat een lopende push niet ná de overdracht alsnog modus 4 instelt.
+When **Push to Victron** is turned off, the disabled state is saved first. OptiVolt then sets **mode 1 (Auto/VRM)** and verifies that handoff as well. The interface reports confirmation or an error. If the handoff fails, push remains disabled; saving settings again during the same server run can retry it. Plan and guard writes are serialized with the handoff so that an in-flight push cannot set mode 4 after the handoff.
 
-De directe MQTT-topics beginnen met `W/<portal-ID>/…` voor schrijven, `R/<portal-ID>/…` voor opvragen en `N/<portal-ID>/…` voor antwoorden. Voor de modus wordt `settings/0/Settings/DynamicEss/Mode` gebruikt, met bijvoorbeeld `{"value":4}`. Een extra `victron/`-prefix hoort alleen bij een bridge die daarvoor is ingericht. Modus 4 betreft **Dynamic ESS**, niet de algemene ESS-instelling External control.
+Direct MQTT topics start with `W/<portal-ID>/…` for writes, `R/<portal-ID>/…` for reads, and `N/<portal-ID>/…` for responses. The mode topic is `settings/0/Settings/DynamicEss/Mode`, for example with `{"value":4}`. An additional `victron/` prefix should be used only with a bridge configured for it. Mode 4 is **Dynamic ESS**, not the general ESS External control setting.
 
-### DA reliability: registratie van voorspelfouten
+### DA reliability: forecast error tracking
 
-`GET /forecast-accuracy` en het veld **DA reliability · 30d** tonen een score op basis van de laatste maximaal 30 volledig geregistreerde leveringsdagen. Dat zijn niet noodzakelijk 30 aaneengesloten kalenderdagen. Alleen dagen met complete, overeenkomende kwartieren tellen mee; zomer-/wintertijd wordt meegenomen.
+`GET /forecast-accuracy` and the **DA reliability · 30d** field show a score based on the latest 30 fully recorded delivery days, at most. These are not necessarily 30 consecutive calendar days. Only days with complete, matching quarter-hour slots are included; daylight saving time is taken into account.
 
-De opgeslagen voorspelling van vóór ontvangst van de complete werkelijke prijzen wordt vergeleken met de inkoopprijzen:
+The forecast stored before the complete actual prices arrived is compared with the import prices:
 
 ```text
-WAPE = 100 × som(|voorspeld − werkelijk|) / som(|werkelijk|)
+WAPE = 100 × sum(|forecast − actual|) / sum(|actual|)
 score = max(0, 100 − WAPE)
 ```
 
-**82% betekent dus ongeveer 18% relatieve totale absolute prijsafwijking**, niet dat 82% van de kwartieren correct is en ook niet dat de komende week met 82% zekerheid klopt. Bij een nulnoemer is er geen berekenbare score. De vergelijking gebruikt de opgeslagen inkoopprijsreeksen, inclusief de toegepaste tariefformule. Belasting en opslagen beïnvloeden daardoor de schaal van de score.
+**An 82% score therefore means about an 18% relative total absolute price error**; it does not mean that 82% of quarter-hour values are correct or that next week is accurate with 82% confidence. If the denominator is zero, no score can be calculated. The comparison uses the stored import-price series, including the applied tariff formula. Taxes and surcharges therefore affect the scale of the score.
 
-De hovertooltip toont de uitleg en het actuele aantal dagen en kwartieren. Klik op de tooltip of druk Escape om hem te sluiten. De registratie staat in `DATA_DIR/forecast-accuracy.json` en staat los van de modeltraining in EpexPredictor.
+The hover tooltip shows the explanation and the current number of days and quarter-hour slots. Click the tooltip or press Escape to close it. Records are stored in `DATA_DIR/forecast-accuracy.json`, separately from model training in EpexPredictor.
 
-### Interface en opgeslagen voorkeuren
+### Interface and saved preferences
 
-- **Update data before recompute**, **Push to Victron** en de guardmodus worden opgeslagen.
-- **Show DESS details**, **Show kWh**, grafiekbereik, tijdresolutie van de energiestromen en de opbrengstlijn blijven bewaard op de server. Bestaande browservoorkeuren kunnen bij de eerste migratie worden overgenomen.
-- Het veranderen van alleen weergavevoorkeuren maakt de gecachte planning niet ongeldig en start geen nieuwe optimalisatie.
-- Aangepaste layout, grafiektypografie voor kleine schermen, tooltipopmaak en een versieaanduiding naast het logo.
-- Lokale gegevens, geheimen en tijdelijke bestanden worden via de ignore-regels buiten de broncode gehouden. Vul API-sleutels lokaal in; publiceer geen persoonlijke configuratie of datamappen.
+- **Update data before recompute**, **Push to Victron**, and the guard mode are saved.
+- **Show DESS details**, **Show kWh**, chart range, energy-flow time resolution, and the returns line are saved on the server. Existing browser preferences can be migrated on first use.
+- Changing display preferences alone does not invalidate the cached plan or start a new optimization.
+- Custom layout, chart typography for small screens, tooltip styling, and a version label next to the logo.
+- Local data, secrets, and temporary files are kept out of the source code through ignore rules. Enter API keys locally; do not publish personal configuration or data directories.
 
-### Activeren en controleren
+### Activation and verification
 
-Backendwijzigingen vereisen een herstart van de actieve service/container. Bij een standalone systemd-installatie met deze servicenaam: `systemctl restart optivolt.service`. Vernieuw daarna de browser; alleen statische UI-wijzigingen vereisen normaal geen serverherstart.
+Backend changes require restarting the active service or container. For a standalone systemd installation using this service name, run `systemctl restart optivolt.service`. Then refresh the browser; static UI changes normally do not require a server restart.
 
-Gerichte regressietests dekken onder meer blokherkenning, standbycompensatie, tapering, toekomstige blokken, MQTT-modusbevestiging en de overdracht naar VRM. Gebruik `npm run typecheck` en `npm run test:run` om de huidige checkout te controleren. De registratie van voorspelfouten moet uitwijzen hoeveel de gekoppelde voorspellingen in de praktijk verbeteren; deze README claimt geen gemeten nauwkeurigheidswinst.
+Targeted regression tests cover block detection, standby compensation, tapering, future blocks, MQTT mode confirmation, and handoff to VRM. Run `npm run typecheck` and `npm run test:run` to check the current checkout. Forecast error tracking must establish whether linked forecasts improve in practice; this README does not claim a measured accuracy gain.
 
 
 Plan and control a home energy system with forecasts, dynamic tariffs, and a day-ahead optimization pipeline. OptiVolt builds a linear program over 15-minute slots to decide how your **battery**, **PV**, **EV**, **heat pump**, and the **grid** should interact to minimize cost.

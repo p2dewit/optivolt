@@ -2,6 +2,7 @@ import { loadSettings } from './settings-store.ts';
 import { VictronMqttClient } from './victron-mqtt-client.ts';
 import type { PlanRowWithDess } from '../types.ts';
 import { getMqttEnv } from '../env.ts';
+import { FeedIn, Restrictions, Strategy } from '../../lib/dess-mapper.ts';
 
 let victronClient: VictronMqttClient | null = null;
 
@@ -233,9 +234,17 @@ function validateSchedule(rows: PlanRowWithDess[], slotCount: number, stepSecond
   const stepMs = stepSeconds * 1000;
   for (let i = 0; i < 4; i++) {
     const row = rows[i];
+    const slot = row.dess;
     if (!Number.isFinite(row.timestampMs) || !Number.isInteger(row.timestampMs / 1000)
-      || !row.dess || !Number.isFinite(row.dess.socTarget_percent)
-      || row.dess.socTarget_percent < 0 || row.dess.socTarget_percent > 100) {
+      || !slot || !Number.isFinite(slot.socTarget_percent)
+      || slot.socTarget_percent < 0 || slot.socTarget_percent > 100
+      || !Number.isInteger(slot.strategy)
+      || ![Strategy.targetSoc, Strategy.selfConsumption, Strategy.proBattery, Strategy.proGrid].includes(slot.strategy as 0 | 1 | 2 | 3)
+      || !Number.isInteger(slot.flags) || slot.flags < 0
+      || !Number.isInteger(slot.restrictions)
+      || ![Restrictions.none, Restrictions.batteryToGrid, Restrictions.gridToBattery, Restrictions.both].includes(slot.restrictions as 0 | 1 | 2 | 3)
+      || !Number.isInteger(slot.feedin)
+      || ![FeedIn.allowed, FeedIn.blocked].includes(slot.feedin as 0 | 1)) {
       throw new Error(`Invalid DESS schedule slot ${i}`);
     }
     if (i > 0 && row.timestampMs !== rows[i - 1].timestampMs + stepMs) {
@@ -245,6 +254,17 @@ function validateSchedule(rows: PlanRowWithDess[], slotCount: number, stepSecond
   const firstMs = rows[0].timestampMs;
   if (nowMs < firstMs || nowMs >= firstMs + 4 * stepMs) {
     throw new Error('DESS schedule does not cover the current time');
+  }
+}
+
+export function isDynamicEssScheduleValid(
+  rows: PlanRowWithDess[], slotCount: number, stepSeconds: number, nowMs = Date.now(),
+): boolean {
+  try {
+    validateSchedule(rows, slotCount, stepSeconds, nowMs);
+    return true;
+  } catch {
+    return false;
   }
 }
 

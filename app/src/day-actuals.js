@@ -1,4 +1,4 @@
-import { fetchDayActuals } from './api/api.js';
+import { fetchDayActuals, fetchDayActualsRange } from './api/api.js';
 import { drawFlowsBarStackSigned } from './charts.js';
 import { aggregateRowsHourly, resolveFlowsResolution } from './plan-view.js';
 import { mountViewToggles, subscribeViewToggles } from './view-toggles.js';
@@ -39,10 +39,28 @@ function addDays(key, amount) {
   d.setUTCDate(d.getUTCDate() + amount);
   return d.toISOString().slice(0, 10);
 }
+function dayDifference(dateKey, referenceKey) {
+  return Math.round((Date.parse(`${dateKey}T00:00:00Z`) - Date.parse(`${referenceKey}T00:00:00Z`)) / 86_400_000);
+}
 function dateKeyAt(date, timeZone) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
     .formatToParts(date).filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+export function daySelectorLabel(dateKey, todayKey, timeZone) {
+  const offset = dayDifference(dateKey, todayKey);
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  const shortParts = Object.fromEntries(new Intl.DateTimeFormat('nl-NL', {
+    timeZone, day: 'numeric', month: 'short',
+  }).formatToParts(date).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  const month = shortParts.month.replace(/\.$/, '');
+  const shortDate = `${shortParts.day} ${month.charAt(0).toUpperCase()}${month.slice(1)}`;
+  if (offset === 0) return `Today ${shortDate}`;
+  if (offset === -1) return `Yesterday ${shortDate}`;
+  if (offset === 1) return `Tomorrow ${shortDate}`;
+  return new Intl.DateTimeFormat('nl-NL', {
+    timeZone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+  }).format(date);
 }
 function planAt(planRows, timestampMs) {
   if (!planRows?.length) return null;
@@ -93,6 +111,20 @@ export function plannedDayTotals(startMs, endMs, planRows) {
   return range.complete ? { complete: true, totals: range.totals } : { complete: false, totals: null };
 }
 
+export function actualTotalsByCoverage(totals, quality, isHistorical) {
+  if (!totals) return null;
+  const gridComplete = !isHistorical || quality.missingGridMs === 0;
+  const importComplete = gridComplete && (!isHistorical || quality.missingImportPriceMs === 0);
+  const exportComplete = gridComplete && (!isHistorical || quality.missingExportPriceMs === 0);
+  const batteryComplete = !isHistorical || quality.missingBatteryMs === 0;
+  return {
+    result_cents: importComplete && exportComplete && batteryComplete ? totals.result_cents : null,
+    costs_cents: importComplete ? totals.costs_cents : null,
+    revenue_cents: exportComplete ? totals.revenue_cents : null,
+    batteryCosts_cents: batteryComplete ? totals.batteryCosts_cents : null,
+  };
+}
+
 function addActualAndPlanned(actual, planned) {
   if (!actual) return planned?.totals ?? null;
   if (!planned?.totals) return actual;
@@ -112,24 +144,39 @@ export function initDayActuals(els) {
   let payload = null;
   let plan = getPlan();
   let todayPayload = null;
-  let dayOffset = 0;
+  let selectedDateKey = null;
+  let archiveRange = { minDate: null, maxDate: null };
   let revenue = false;
   try { revenue = localStorage.getItem(REVENUE_KEY) === 'true'; } catch { /* Storage can be unavailable in private mode. */ }
   setToggle(els.showActualRevenue, revenue);
   const toggles = mountViewToggles(els.actualViewToggles);
 
   function updateNavigation() {
-    const names = ['Yesterday', 'Today', 'Tomorrow'];
-    const selected = names[dayOffset + 1];
-    if (els.dayActualsPrev) { els.dayActualsPrev.textContent = `← ${names[dayOffset] ?? 'Yesterday'}`; els.dayActualsPrev.hidden = dayOffset <= -1; }
-    if (els.dayActualsNext) { els.dayActualsNext.textContent = `${names[dayOffset + 2] ?? 'Tomorrow'} →`; els.dayActualsNext.hidden = dayOffset >= 1; }
+    const todayKey = dateKeyAt(new Date(), payload.timeZone);
+    const offset = dayDifference(payload.dateKey, todayKey);
+    const selected = daySelectorLabel(payload.dateKey, todayKey, payload.timeZone);
+    if (els.dayActualsPrev) {
+      els.dayActualsPrev.textContent = offset === 0 ? '← Yesterday' : offset === 1 ? '← Today' : '← Previous day';
+      els.dayActualsPrev.hidden = Boolean(archiveRange.minDate && payload.dateKey <= archiveRange.minDate);
+    }
+    if (els.dayActualsNext) {
+      els.dayActualsNext.textContent = offset === 0 ? 'Tomorrow →' : 'Next day →';
+      els.dayActualsNext.hidden = offset >= 1;
+    }
     if (els.dayActualsDay) els.dayActualsDay.textContent = selected;
+    if (els.dayActualsDate) {
+      els.dayActualsDate.value = payload.dateKey;
+      els.dayActualsDate.min = archiveRange.minDate ?? todayKey;
+      els.dayActualsDate.max = addDays(todayKey, 1);
+    }
   }
 
   function chartRows() {
     const start = new Date(payload.start).getTime();
     const end = new Date(payload.end).getTime();
     const now = new Date(payload.observedAt).getTime();
+    const todayKey = dateKeyAt(new Date(), payload.timeZone);
+    const dayOffset = dayDifference(payload.dateKey, todayKey);
     const actuals = new Map(payload.rows.map(row => [Math.floor(row.timestampMs / SLOT_MS) * SLOT_MS, row]));
     const rows = [];
     let netCents = 0;
@@ -167,6 +214,8 @@ export function initDayActuals(els) {
 
   function render() {
     if (!payload) return;
+    const todayKey = dateKeyAt(new Date(), payload.timeZone);
+    const dayOffset = dayDifference(payload.dateKey, todayKey);
     updateNavigation();
     const rows = chartRows();
     const resolution = resolveFlowsResolution(24);
@@ -187,12 +236,15 @@ export function initDayActuals(els) {
     const totals = dayOffset === 0
       ? addActualAndPlanned(todayPayload?.totals, plannedRest)
       : dayOffset < 0 ? payload.totals : plannedTotals?.totals;
-    setFinancialValue(els.dayResult, totals?.result_cents);
-    setNeutralFinancialValue(els.dayCosts, totals?.costs_cents);
-    setFinancialValue(els.dayRevenue, totals?.revenue_cents);
-    setNeutralFinancialValue(els.dayBatteryCosts, totals?.batteryCosts_cents);
+    const displayedTotals = actualTotalsByCoverage(totals, payload.quality, dayOffset < 0);
+    setFinancialValue(els.dayResult, displayedTotals?.result_cents);
+    setNeutralFinancialValue(els.dayCosts, displayedTotals?.costs_cents);
+    setFinancialValue(els.dayRevenue, displayedTotals?.revenue_cents);
+    setNeutralFinancialValue(els.dayBatteryCosts, displayedTotals?.batteryCosts_cents);
     const date = payload.dateKey;
-    const label = dayOffset === 0 ? 'Today' : dayOffset < 0 ? 'Yesterday' : 'Tomorrow';
+    const label = dayOffset === 0 ? 'Today' : dayOffset === -1 ? 'Yesterday' : dayOffset === 1 ? 'Tomorrow'
+      : new Intl.DateTimeFormat('nl-NL', { timeZone: payload.timeZone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+        .format(new Date(`${date}T12:00:00Z`));
     const at = new Intl.DateTimeFormat('nl-NL', { timeZone: payload.timeZone, hour: '2-digit', minute: '2-digit' }).format(new Date(payload.observedAt));
     if (dayOffset > 0) {
       els.dayActualsStatus.textContent = !plan?.rows?.length
@@ -204,31 +256,47 @@ export function initDayActuals(els) {
     }
     const quality = payload.quality;
     const gaps = [['grid', formatMinutes(quality.missingGridMs)], ['battery', formatMinutes(quality.missingBatteryMs)], ['PV', formatMinutes(quality.missingPvMs)], ['import price', formatMinutes(quality.missingImportPriceMs)], ['export price', formatMinutes(quality.missingExportPriceMs)]].filter(([, duration]) => duration).map(([name, duration]) => `${name}: ${duration}`);
-    const prefix = dayOffset < 0 ? `Actual power flows for ${label.toLowerCase()} (${date}).` : `Today (${date}): actual through ${at}, planned after Now (${payload.timeZone}).`;
+    const prefix = dayOffset < 0 ? `Actual power flows for ${label.toLowerCase()} (${date}).` : `Today (${date}): actual through ${at}, planned after Now.`;
     const planNote = dayOffset === 0 && observedAt < dayEnd
       ? plannedRest.coverage === 1 ? ' Planned costs and revenue through midnight included.'
         : plannedRest.coverage > 0 ? ` Planned costs and revenue included for ${Math.round(plannedRest.coverage * 100)}% of the remaining time.`
           : ' No planned costs or revenue available for the remaining time yet.'
       : '';
-    els.dayActualsStatus.textContent = gaps.length ? `${prefix} Partial data — ${gaps.join(', ')}.${planNote}` : `${prefix}${planNote}`;
+    els.dayActualsStatus.textContent = dayOffset === 0
+      ? `${prefix}${planNote}`
+      : gaps.length ? `${prefix} Partial data — ${gaps.join(', ')}.${planNote}` : `${prefix}${planNote}`;
   }
 
   async function refresh() {
     try {
-      const timeZone = payload?.timeZone ?? todayPayload?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Amsterdam';
-      const todayDate = dateKeyAt(new Date(), timeZone);
-      const requestedDate = dayOffset === 0 ? undefined : addDays(todayDate, dayOffset);
-      const nextPayload = await fetchDayActuals(requestedDate);
+      const [nextPayload, range] = await Promise.all([
+        fetchDayActuals(selectedDateKey ?? undefined),
+        fetchDayActualsRange().catch(() => null),
+      ]);
       payload = nextPayload;
+      if (range) archiveRange = range;
       plan = getPlan();
-      if (dayOffset === 0) todayPayload = nextPayload;
+      if (nextPayload.dateKey === dateKeyAt(new Date(), nextPayload.timeZone)) todayPayload = nextPayload;
       render();
     } catch (error) { els.dayActualsStatus.textContent = `Day actuals unavailable: ${error.message}`; }
   }
-  function changeDay(offset) { dayOffset = Math.max(-1, Math.min(1, offset)); payload = null; void refresh(); }
-  els.dayActualsPrev?.addEventListener('click', () => changeDay(dayOffset - 1));
-  els.dayActualsNext?.addEventListener('click', () => changeDay(dayOffset + 1));
-  els.dayActualsDay?.addEventListener('click', () => changeDay(0));
+  function changeDay(offset) {
+    const base = payload?.dateKey ?? selectedDateKey ?? dateKeyAt(new Date(), payload?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Amsterdam');
+    const next = addDays(base, offset);
+    const today = dateKeyAt(new Date(), payload?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Amsterdam');
+    if (next > addDays(today, 1) || (archiveRange.minDate && next < archiveRange.minDate)) return;
+    selectedDateKey = next;
+    payload = null;
+    void refresh();
+  }
+  els.dayActualsPrev?.addEventListener('click', () => changeDay(-1));
+  els.dayActualsNext?.addEventListener('click', () => changeDay(1));
+  els.dayActualsDate?.addEventListener('change', () => {
+    if (!els.dayActualsDate.value) return;
+    selectedDateKey = els.dayActualsDate.value;
+    payload = null;
+    void refresh();
+  });
   els.showActualRevenue?.addEventListener('click', () => {
     revenue = !revenue; setToggle(els.showActualRevenue, revenue);
     try { localStorage.setItem(REVENUE_KEY, String(revenue)); } catch { /* Keep the in-memory choice. */ }

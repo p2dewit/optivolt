@@ -1,9 +1,14 @@
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { toHttpError } from '../http-errors.ts';
-import { getDayActuals } from '../services/day-actuals-service.ts';
+import { fetchAndStoreDayActuals, getDayActualsRange, readArchivedDayActuals } from '../services/day-actuals-archive.ts';
 
 const router = express.Router();
+router.get('/range', async (_req: Request, res: Response, next: NextFunction) => {
+  try { res.json(await getDayActualsRange()); }
+  catch (error) { next(toHttpError(error, 503, 'Could not read the archived DAY ACTUALS date range')); }
+});
+
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const date = typeof req.query.date === 'string' ? req.query.date : undefined;
@@ -12,7 +17,17 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       res.status(400).json({ error: 'date must be YYYY-MM-DD' });
       return;
     }
-    res.json(await getDayActuals(new Date(), date));
+    if (date) {
+      const archived = await readArchivedDayActuals(date);
+      if (archived) {
+        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+          timeZone: archived.timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+        }).formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+        const todayKey = `${parts.year}-${parts.month}-${parts.day}`;
+        if (date !== todayKey && date < todayKey) { res.json(archived); return; }
+      }
+    }
+    res.json(await fetchAndStoreDayActuals(new Date(), date));
   }
   catch (error) { next(toHttpError(error, 503, 'Failed to read today’s GX actuals from Home Assistant')); }
 });

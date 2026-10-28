@@ -118,6 +118,11 @@ interface QuarterBucket {
   timestampMs: number;
   expectedMs: number;
   chartObservedMs: number;
+  gridObservedMs: number;
+  batteryObservedMs: number;
+  pvObservedMs: number;
+  missingImportPriceMs: number;
+  missingExportPriceMs: number;
   flowWh: Record<FlowKey, number>;
   costs_cents: number;
   revenue_cents: number;
@@ -131,6 +136,11 @@ function makeBucket(timestampMs: number, data: Awaited<ReturnType<typeof loadDat
     timestampMs,
     expectedMs: 0,
     chartObservedMs: 0,
+    gridObservedMs: 0,
+    batteryObservedMs: 0,
+    pvObservedMs: 0,
+    missingImportPriceMs: 0,
+    missingExportPriceMs: 0,
     flowWh: Object.fromEntries(FLOW_KEYS.map(key => [key, 0])) as Record<FlowKey, number>,
     costs_cents: 0,
     revenue_cents: 0,
@@ -237,6 +247,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
 
     if (hasGrid) {
       quality.gridObservedMs += durationMs;
+      bucket.gridObservedMs += durationMs;
       const gridW = gridReadings.reduce<number>((sum, value) => sum + Number(value), 0);
       const imp = Math.max(0, gridW);
       const exp = Math.max(0, -gridW);
@@ -248,6 +259,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
         bucket.costs_cents += imp * durationHours / 1000 * ic;
       } else {
         quality.missingImportPriceMs += durationMs;
+        bucket.missingImportPriceMs += durationMs;
       }
       if (exp === 0) {
         // No energy needs pricing for this interval.
@@ -255,6 +267,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
         bucket.revenue_cents += exp * durationHours / 1000 * ec;
       } else {
         quality.missingExportPriceMs += durationMs;
+        bucket.missingExportPriceMs += durationMs;
       }
     } else {
       quality.missingGridMs += durationMs;
@@ -262,6 +275,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
 
     if (hasBattery && Number.isFinite(batteryCostRate) && batteryCostRate >= 0) {
       quality.batteryObservedMs += durationMs;
+      bucket.batteryObservedMs += durationMs;
       // Integrate absolute throughput sample by sample so charging and
       // discharging cannot cancel before the degradation cost is calculated.
       bucket.batteryCosts_cents += 0.5 * batteryCostRate * Math.abs(Number(batteryW)) * durationHours / 1000;
@@ -271,6 +285,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
 
     if (hasPv) {
       quality.pvObservedMs += durationMs;
+      bucket.pvObservedMs += durationMs;
     } else {
       quality.missingPvMs += durationMs;
     }
@@ -310,6 +325,11 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
       batteryWearCost_cents: bucket.batteryCosts_cents,
       cumulativeNetCents,
       observedMinutes: bucket.chartObservedMs / 60_000,
+      gridObservedMinutes: bucket.gridObservedMs / 60_000,
+      batteryObservedMinutes: bucket.batteryObservedMs / 60_000,
+      pvObservedMinutes: bucket.pvObservedMs / 60_000,
+      missingImportPriceMinutes: bucket.missingImportPriceMs / 60_000,
+      missingExportPriceMinutes: bucket.missingExportPriceMs / 60_000,
       missing: bucket.chartObservedMs === 0,
     });
   }

@@ -136,10 +136,13 @@
             <div id="day-actuals-view-toggles" class="flex items-center gap-2"></div>
           </div>
         </div>
-        <div class="mb-2 flex items-center justify-between" role="group" aria-label="Choose day for power flows">
-          <button id="day-actuals-prev" type="button" class="text-sm text-slate-500 hover:text-ink dark:hover:text-white">← Yesterday</button>
-          <button id="day-actuals-day" type="button" class="text-sm font-semibold text-ink dark:text-white">Today</button>
-          <button id="day-actuals-next" type="button" class="text-sm text-slate-500 hover:text-ink dark:hover:text-white">Tomorrow →</button>
+        <div class="day-actuals-navigation mb-2" role="group" aria-label="Choose day for power flows">
+          <button id="day-actuals-prev" type="button" class="day-actuals-prev text-sm text-slate-500 hover:text-ink dark:hover:text-white">← Yesterday</button>
+          <label class="day-actuals-selector inline-flex h-8 cursor-pointer items-center justify-center rounded px-1 text-sm font-semibold text-ink dark:text-white" title="Choose date">
+            <span id="day-actuals-day">Today</span>
+            <input id="day-actuals-date" type="date" aria-label="Choose DAY ACTUALS date" class="day-actuals-date-input">
+          </label>
+          <button id="day-actuals-next" type="button" class="day-actuals-next text-sm text-slate-500 hover:text-ink dark:hover:text-white">Tomorrow →</button>
         </div>
         <p id="day-actuals-status" class="mb-2 text-xs text-slate-400 dark:text-slate-500" aria-live="polite">Loading today’s GX actuals…</p>
         <div class="h-80 w-full chart-wrap" data-chart-empty="No realized GX data is available for today">
@@ -253,14 +256,25 @@
               <span class="toggle-knob"></span>
               <span class="text-sm text-slate-600 dark:text-slate-400">Update data before recompute</span>
             </label>
-            <label class="toggle">
-              <input id="push-to-victron" type="checkbox" data-settings-input data-no-autosolve>
-              <span class="toggle-knob"></span>
-              <span class="text-sm text-slate-600 dark:text-slate-400">Push schedule to Victron</span>
-              <span id="victron-mode"
-                class="text-sm font-medium text-slate-500 dark:text-slate-400"
-                aria-live="polite">Mode: —</span>
-            </label>
+            <div class="flex items-center justify-between gap-3">
+              <label class="toggle min-w-0 flex-1">
+                <input id="push-to-victron" type="checkbox" data-settings-input data-no-autosolve>
+                <span class="toggle-knob"></span>
+                <span class="text-sm text-slate-600 dark:text-slate-400">Push schedule to Victron</span>
+              </label>
+              <div class="flex flex-none flex-col gap-1 rounded-md border border-slate-200 px-2 py-1 dark:border-white/10">
+                <div class="flex items-center gap-2">
+                  <span id="victron-mode" class="w-24 shrink-0 whitespace-nowrap text-right text-sm font-medium text-slate-500 dark:text-slate-400" role="status" aria-live="polite">Mode —</span>
+                  <span class="w-2 shrink-0 text-center text-sm font-medium text-slate-500 dark:text-slate-400" aria-hidden="true">:</span>
+                  <span id="victron-mode-indicator" class="w-4 shrink-0 text-center text-sm font-bold text-slate-500 dark:text-slate-400" aria-hidden="true">…</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span id="victron-plan-status" class="w-24 shrink-0 whitespace-nowrap text-right text-sm font-medium text-slate-500 dark:text-slate-400" role="status" aria-live="polite">Correct plan</span>
+                  <span class="w-2 shrink-0 text-center text-sm font-medium text-slate-500 dark:text-slate-400" aria-hidden="true">:</span>
+                  <span id="victron-plan-indicator" class="w-4 shrink-0 text-center text-sm font-bold text-slate-500 dark:text-slate-400" aria-hidden="true">…</span>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="mt-4 rounded-lg border border-slate-200 p-3 dark:border-white/10">
             <label for="live-block-guard-mode" class="mb-1 block text-sm font-medium text-ink dark:text-slate-100">Live block guard</label>
@@ -928,7 +942,7 @@
           <div class="grid grid-cols-2 gap-3">
             <label class="text-sm col-span-2">Strategy
               <select id="strategy-mode" class="form-select" data-settings-input>
-                <option value="aggressive">Agressive</option>
+                <option value="aggressive">Trade</option>
                 <option value="green">Green</option>
               </select>
             </label>

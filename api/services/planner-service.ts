@@ -13,7 +13,7 @@ import { fetchHaEntityState } from './ha-client.ts';
 import { getQuarterStart } from '../../lib/time-series-utils.ts';
 import { refreshSeriesFromVrmAndPersist } from './vrm-refresh.ts';
 import { refreshPriceForecastAndPersist } from './price-forecast-service.ts';
-import { setDynamicEssSchedule } from './mqtt-service.ts';
+import { isDynamicEssScheduleValid, setDynamicEssSchedule } from './mqtt-service.ts';
 import { getRebalanceNudge, recordFullSocObservation, type RebalanceNudge } from './rebalance-nudge.ts';
 import { getSolverInputsVersion } from './solver-inputs-version.ts';
 import { solveLp } from './solve-runner.ts';
@@ -331,6 +331,17 @@ export async function writePlanToVictron(rows: PlanRowWithDess[], stepMin: numbe
 
 export function isLastPlanPushedToVictron(): boolean {
   return lastPlan != null && pushedPlanComputedAtMs === lastPlan.computedAtMs;
+}
+
+export function isLastPlanVictronReady(nowMs = Date.now()): boolean {
+  const plan = lastPlan;
+  if (!plan || plan.result.Status !== 'Optimal' || plan.inputsChangedDuringSolve) return false;
+  return isDynamicEssScheduleValid(
+    plan.rows,
+    Math.min(DESS_SLOTS, plan.rows.length),
+    plan.timing.stepMin * 60,
+    nowMs,
+  );
 }
 
 export async function planAndMaybeWrite({

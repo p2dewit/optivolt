@@ -714,6 +714,26 @@ body {
 .guard-block-charge { fill: #0284c7; }
 .guard-block-discharge { fill: #ea580c; }
 .guard-block-outside { fill: #94a3b8; opacity: .55; }
+
+/* Keep the native date picker clickable without exposing its locale-specific value. */
+.day-actuals-navigation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.day-actuals-prev { justify-self: start; }
+.day-actuals-selector { position: relative; justify-self: center; }
+.day-actuals-next { justify-self: end; }
+
+.day-actuals-date-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
 .guard-block-label { fill: #334155; font-size: 10px; }
 .guard-block-scale { fill: #64748b; font-size: 9px; }
 .dark .guard-block-tooltip { background: #0f172a; color: #e2e8f0; border-color: #475569; }

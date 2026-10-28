@@ -196,7 +196,7 @@ export function updatePlanMeta(els, tsStart, tsEnd) {
 export function updatePlanCostsUI(els, rows, strategy) {
   if (els.planStrategy) {
     const isGreen = strategy === "green";
-    els.planStrategy.textContent = isGreen ? "Green" : "Agressive";
+    els.planStrategy.textContent = isGreen ? "Green" : "Trade";
     els.planStrategy.classList.toggle("financial-positive", isGreen);
     els.planStrategy.classList.toggle("financial-negative", !isGreen);
   }

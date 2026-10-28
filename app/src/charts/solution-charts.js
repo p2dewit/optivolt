@@ -182,15 +182,16 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
         if (index < 0 || index > rows.length) return;
         const x = scales.x.getPixelForValue(Math.min(index, rows.length - 0.5));
         ctx.save();
-        ctx.strokeStyle = '#0f172a';
+        const markerColor = getChartTheme().axisTickColor;
+        ctx.strokeStyle = markerColor;
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 4]);
         ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.fillStyle = '#0f172a';
+        ctx.fillStyle = markerColor;
         ctx.font = '600 11px sans-serif';
         ctx.textAlign = x > chartArea.right - 48 ? 'right' : 'left';
-        ctx.fillText('Now', x + (x > chartArea.right - 48 ? -4 : 4), chartArea.top + 12);
+        ctx.fillText('Now', x + (x > chartArea.right - 48 ? -4 : 4), chartArea.top + 7);
         ctx.restore();
       },
     });
