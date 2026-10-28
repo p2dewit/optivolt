@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1060" viewBox="0 0 1600 1060" role="img" aria-labelledby="title desc">
+  <title id="title">Illustrative OptiVolt 1.0 Optimizer overview</title>
+  <desc id="desc">A fictional sample-data interface illustration showing the OptiVolt header, strategy selector, Day Actuals chart, and Optimized Plan chart.</desc>
+  <defs>
+    <linearGradient id="bg" x2="0" y2="1"><stop stop-color="#f8fafc"/><stop offset="1" stop-color="#eef4f8"/></linearGradient>
+    <linearGradient id="blue" x2="0" y2="1"><stop stop-color="#38bdf8"/><stop offset="1" stop-color="#0284c7"/></linearGradient>
+    <style>
+      text{font-family:Inter,Arial,sans-serif;fill:#0f172a}.muted{fill:#64748b}.tiny{font-size:13px}.small{font-size:16px}.body{font-size:18px}.label{font-size:14px;font-weight:700;letter-spacing:2px;fill:#94a3b8}.title{font-size:24px;font-weight:700}.card{fill:#fff;stroke:#dbe3ec;stroke-width:1.5}.grid{stroke:#e2e8f0;stroke-width:1}.axis{font-size:13px;fill:#64748b}.metric{font-size:14px;letter-spacing:1.2px;font-weight:700;fill:#64748b}.value{font-size:23px;font-weight:700}.pill{fill:#e0f2fe}.pilltext{font-size:14px;font-weight:600;fill:#0369a1}
+    </style>
+  </defs>
+  <rect width="1600" height="1060" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1600" height="76" fill="#fff" stroke="#e2e8f0"/>
+  <text x="54" y="48" font-size="30" font-weight="700">OptiVolt <tspan font-size="22" font-weight="400" fill="#94a3b8">DESS</tspan><tspan font-size="15" font-weight="400" fill="#94a3b8"> 1.0</tspan></text>
+  <rect x="560" y="17" width="480" height="44" rx="22" fill="#f1f5f9"/>
+  <rect x="566" y="21" width="142" height="36" rx="18" fill="#fff" stroke="#dbe3ec"/>
+  <text x="587" y="45" class="small" font-weight="700" fill="#0369a1">⚡ Optimizer</text><text x="750" y="45" class="small muted">EV</text><text x="841" y="45" class="small muted">Predictions</text><text x="965" y="45" class="small muted">Settings</text>
+  <text x="52" y="112" class="tiny muted">OPTIMIZER</text><text x="1548" y="112" class="tiny muted" text-anchor="end">ILLUSTRATIVE VIEW · SAMPLE DATA</text>
+
+  <rect x="48" y="132" width="1504" height="126" rx="16" class="card"/>
+  <text x="78" y="170" class="label">STRATEGY</text>
+  <rect x="78" y="188" width="300" height="48" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="101" y="220" class="body" font-weight="700">Trade</text><text x="345" y="220" class="body muted">↕</text>
+
+  <rect x="48" y="278" width="1504" height="384" rx="16" class="card"/>
+  <text x="78" y="318" class="label">DAY ACTUALS</text>
+  <rect x="1235" y="292" width="104" height="34" rx="17" fill="#f1f5f9"/><text x="1260" y="314" class="tiny muted">Revenue</text>
+  <rect x="1352" y="292" width="170" height="34" rx="17" class="pill"/><text x="1371" y="314" class="pilltext">15 min　⌄</text>
+  <text x="90" y="359" class="small muted">← Yesterday</text><text x="800" y="359" class="body" font-weight="700" text-anchor="middle">Today 28 Oct</text><text x="1508" y="359" class="small muted" text-anchor="end">Tomorrow →</text>
+  <text x="79" y="389" class="tiny muted">Realized flows so far · planned remainder continues to midnight</text>
+  <g transform="translate(92 408)">
+    <line x1="0" y1="0" x2="1410" y2="0" class="grid"/><line x1="0" y1="48" x2="1410" y2="48" class="grid"/><line x1="0" y1="96" x2="1410" y2="96" class="grid"/><line x1="0" y1="144" x2="1410" y2="144" class="grid"/><line x1="0" y1="192" x2="1410" y2="192" class="grid"/>
+    <line x1="0" y1="96" x2="1410" y2="96" stroke="#94a3b8" stroke-width="1.5"/>
+    <g fill="#0284c7"><rect x="55" y="67" width="27" height="29" rx="3"/><rect x="120" y="45" width="27" height="51" rx="3"/><rect x="185" y="76" width="27" height="20" rx="3"/><rect x="250" y="30" width="27" height="66" rx="3"/><rect x="315" y="59" width="27" height="37" rx="3"/><rect x="380" y="82" width="27" height="14" rx="3"/></g>
+    <g fill="#ea580c"><rect x="85" y="96" width="27" height="30" rx="3"/><rect x="150" y="96" width="27" height="48" rx="3"/><rect x="215" y="96" width="27" height="22" rx="3"/><rect x="280" y="96" width="27" height="59" rx="3"/><rect x="345" y="96" width="27" height="39" rx="3"/><rect x="410" y="96" width="27" height="18" rx="3"/></g>
+    <g fill="#94a3b8" opacity=".55"><rect x="480" y="65" width="27" height="31" rx="3"/><rect x="545" y="48" width="27" height="48" rx="3"/><rect x="610" y="78" width="27" height="18" rx="3"/><rect x="675" y="39" width="27" height="57" rx="3"/><rect x="740" y="72" width="27" height="24" rx="3"/><rect x="805" y="54" width="27" height="42" rx="3"/><rect x="870" y="83" width="27" height="13" rx="3"/><rect x="935" y="61" width="27" height="35" rx="3"/><rect x="1000" y="46" width="27" height="50" rx="3"/><rect x="1065" y="70" width="27" height="26" rx="3"/><rect x="1130" y="35" width="27" height="61" rx="3"/><rect x="1195" y="64" width="27" height="32" rx="3"/><rect x="1260" y="51" width="27" height="45" rx="3"/><rect x="1325" y="75" width="27" height="21" rx="3"/></g>
+    <path d="M12 145 C120 136 170 159 260 126 S430 126 515 115 S680 124 780 98 S950 100 1050 86 S1210 77 1398 51" fill="none" stroke="#16a34a" stroke-width="3"/>
+    <line x1="440" y1="0" x2="440" y2="192" stroke="#475569" stroke-width="2" stroke-dasharray="6 5"/><text x="449" y="16" class="tiny" fill="#334155">Now</text>
+    <text x="0" y="220" class="axis">00:00</text><text x="320" y="220" class="axis">06:00</text><text x="675" y="220" class="axis">12:00</text><text x="1030" y="220" class="axis">18:00</text><text x="1372" y="220" class="axis">24:00</text>
+  </g>
+  <g transform="translate(96 642)"><rect width="15" height="10" rx="2" fill="#0284c7"/><text x="23" y="10" class="tiny muted">Grid import</text><rect x="144" width="15" height="10" rx="2" fill="#ea580c"/><text x="167" y="10" class="tiny muted">Grid export</text><line x1="283" y1="5" x2="303" y2="5" stroke="#16a34a" stroke-width="3"/><text x="311" y="10" class="tiny muted">Revenue</text><line x1="415" y1="5" x2="435" y2="5" stroke="#475569" stroke-dasharray="5 4" stroke-width="2"/><text x="443" y="10" class="tiny muted">Now</text></g>
+
+  <rect x="48" y="682" width="1504" height="352" rx="16" class="card"/>
+  <text x="78" y="722" class="label">OPTIMIZED PLAN</text>
+  <rect x="1235" y="696" width="104" height="34" rx="17" fill="#f1f5f9"/><text x="1260" y="718" class="tiny muted">Revenue</text>
+  <rect x="1352" y="696" width="170" height="34" rx="17" class="pill"/><text x="1371" y="718" class="pilltext">15 min　⌄</text>
+  <text x="80" y="764" class="small muted">15-minute optimized grid and battery flows</text>
+  <g transform="translate(92 788)">
+    <line x1="0" y1="0" x2="1410" y2="0" class="grid"/><line x1="0" y1="43" x2="1410" y2="43" class="grid"/><line x1="0" y1="86" x2="1410" y2="86" class="grid"/><line x1="0" y1="129" x2="1410" y2="129" class="grid"/>
+    <line x1="0" y1="76" x2="1410" y2="76" stroke="#94a3b8" stroke-width="1.5"/>
+    <g fill="#0284c7"><rect x="40" y="45" width="34" height="31" rx="3"/><rect x="130" y="25" width="34" height="51" rx="3"/><rect x="220" y="53" width="34" height="23" rx="3"/><rect x="310" y="16" width="34" height="60" rx="3"/><rect x="400" y="42" width="34" height="34" rx="3"/><rect x="490" y="60" width="34" height="16" rx="3"/><rect x="580" y="32" width="34" height="44" rx="3"/><rect x="670" y="20" width="34" height="56" rx="3"/></g>
+    <g fill="#ea580c"><rect x="78" y="76" width="34" height="36" rx="3"/><rect x="168" y="76" width="34" height="25" rx="3"/><rect x="258" y="76" width="34" height="49" rx="3"/><rect x="348" y="76" width="34" height="30" rx="3"/><rect x="438" y="76" width="34" height="23" rx="3"/><rect x="528" y="76" width="34" height="39" rx="3"/><rect x="618" y="76" width="34" height="28" rx="3"/></g>
+    <path d="M10 118 C130 114 190 103 270 110 S400 96 490 91 S630 91 720 73 S860 76 950 58 S1090 54 1190 42 S1320 30 1400 14" fill="none" stroke="#16a34a" stroke-width="3"/>
+    <text x="0" y="151" class="axis">Today</text><text x="350" y="151" class="axis">Tomorrow</text><text x="700" y="151" class="axis">+1 day</text><text x="1050" y="151" class="axis">+2 days</text><text x="1370" y="151" class="axis">Horizon</text>
+  </g>
+  <text x="1515" y="1020" text-anchor="end" class="tiny muted">All names and values are examples for documentation.</text>
+</svg>

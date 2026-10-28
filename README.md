@@ -4,6 +4,30 @@
 
 This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.0** in the page header identifies this personal fork.
 
+## Optimizer tab overview
+
+The **Optimizer** tab is the main overview for planning and operating the home battery. It brings the selected strategy, measured energy flows, the optimized schedule, run controls, and supporting charts together on one page.
+
+![Illustrative OptiVolt 1.0 Optimizer overview showing strategy, day actuals, and optimized plan](docs/images/optimizer-overview.svg)
+
+*Illustrative interface view. All figures and chart values are fictional examples.*
+
+### Strategy and power-flow plans
+
+- **Strategy:** choose the optimization strategy, such as Trade or Green.
+- **Day Actuals:** review the selected day's realized power flows, with date navigation and chart controls for the time resolution and optional revenue line. The four summary tiles show Revenue, Import Cost, Export Revenue, and Battery Wear Cost. Today can include the planned remainder of the day; past dates show the selected day's stored results.
+- **Optimized Plan:** inspect the calculated power-flow schedule. Choose a 15-minute or hourly view, select the planning horizon, and optionally show the cumulative revenue line. Its summary tiles use the same four measures as Day Actuals.
+
+### Controls and diagnostics
+
+The Settings panel contains optimizer inputs and quick settings, recompute options, and the Victron schedule-push control. The adjacent status area reports the last run, current plan summary, battery state of charge, load and solar outlook, and related diagnostics. Mode and Correct plan indicators show the detected Victron mode and whether the current plan is complete and syntactically valid for Victron. The Live block guard status is shown with its operating mode.
+
+Battery SoC, Energy Prices (including the DA reliability · 30d indicator), and Predicted Load and Solar charts help explain the result. The Schedule Table provides the slot-by-slot plan, with display options for DESS details and energy values.
+
+![Illustrative OptiVolt 1.0 optimizer controls, diagnostics, charts, and schedule table](docs/images/optimizer-controls-and-diagnostics.svg)
+
+*Illustrative interface view. Example settings, status, and chart data are fictional.*
+
 ### Prices, strategies, and returns
 
 - **All-in tariffs:** Energy tax, import surcharge, selling costs, VAT, and a net-metering option are applied centrally to API prices and price forecasts. The base price series are retained so that tariff changes can be reapplied without double counting. Tariff settings use €/kWh; price series use cents/kWh.
