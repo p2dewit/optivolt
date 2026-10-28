@@ -111,6 +111,13 @@ export function plannedDayTotals(startMs, endMs, planRows) {
   return range.complete ? { complete: true, totals: range.totals } : { complete: false, totals: null };
 }
 
+export function dayActualsTooltipPrices(actual, planned) {
+  return {
+    ic: Number.isFinite(actual?.ic) ? actual.ic : Number.isFinite(planned?.ic) ? planned.ic : null,
+    ec: Number.isFinite(actual?.ec) ? actual.ec : Number.isFinite(planned?.ec) ? planned.ec : null,
+  };
+}
+
 export function actualTotalsByCoverage(totals, quality, isHistorical) {
   if (!totals) return null;
   const gridComplete = !isHistorical || quality.missingGridMs === 0;
@@ -186,7 +193,15 @@ export function initDayActuals(els) {
       const remaining = SLOT_MS - actualUntil;
       const useActual = dayOffset <= 0 && actualUntil > 0;
       const planned = dayOffset >= 0 && remaining > 0 ? planAt(plan?.rows, timestampMs + actualUntil) : null;
-      const row = { timestampMs, tIdx: rows.length, soc_percent: null, ic: null, ec: null };
+      // The flow tooltip reads quarter-hour buy/sell prices from these rows.
+      // Preserve the realized prices for elapsed slots and use the optimizer's
+      // prices for planned slots (including the planned remainder of today).
+      const row = {
+        timestampMs,
+        tIdx: rows.length,
+        soc_percent: null,
+        ...dayActualsTooltipPrices(actual, planned),
+      };
       const keys = ['load', 'pv', 'imp', 'exp', 'pv2l', 'pv2b', 'pv2g', 'b2l', 'b2g', 'g2l', 'g2b', 'g2ev', 'pv2ev', 'b2ev'];
       for (const key of keys) {
         const actualPower = useActual && actual ? Number(actual[key]) || 0 : 0;

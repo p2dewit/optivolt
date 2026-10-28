@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actualTotalsByCoverage, daySelectorLabel, plannedDayTotals, plannedRangeTotals } from '../../app/src/day-actuals.js';
+import { actualTotalsByCoverage, dayActualsTooltipPrices, daySelectorLabel, plannedDayTotals, plannedRangeTotals } from '../../app/src/day-actuals.js';
 
 const HOUR = 60 * 60_000;
 
@@ -80,5 +80,21 @@ describe('historical DAY ACTUALS totals', () => {
     }, true)).toEqual({
       costs_cents: 100, revenue_cents: 150, batteryCosts_cents: null, result_cents: null,
     });
+  });
+});
+
+describe('DAY ACTUALS tooltip prices', () => {
+  it('uses realized buy and sell prices for historical quarters', () => {
+    expect(dayActualsTooltipPrices({ ic: 18.4, ec: 12.7 }, null)).toEqual({ ic: 18.4, ec: 12.7 });
+  });
+
+  it('uses planned prices for tomorrow and the planned remainder of today', () => {
+    expect(dayActualsTooltipPrices(null, { ic: 21.3, ec: 15.2 })).toEqual({ ic: 21.3, ec: 15.2 });
+  });
+
+  it('falls back to the plan when an actual price is missing and preserves missing prices', () => {
+    expect(dayActualsTooltipPrices({ ic: null, ec: 9.5 }, { ic: 17.6, ec: 14.1 }))
+      .toEqual({ ic: 17.6, ec: 9.5 });
+    expect(dayActualsTooltipPrices(null, null)).toEqual({ ic: null, ec: null });
   });
 });
