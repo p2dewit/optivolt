@@ -19,7 +19,7 @@ export function injectTooltipStyles() {
   s.id = "ov-tt-style";
   s.textContent = `
     .ov-tt {
-      position:absolute; pointer-events:none; z-index:10;
+      position:absolute; pointer-events:none; visibility:hidden; opacity:0; z-index:10;
       border-radius:8px; padding:10px 12px; font-size:12px;
       font-family:system-ui,sans-serif; min-width:160px;
       box-shadow:0 4px 20px rgba(0,0,0,0.18);
@@ -31,8 +31,9 @@ export function injectTooltipStyles() {
       box-shadow:0 4px 20px rgba(0,0,0,0.35);
     }
     @media (hover: none) and (pointer: coarse) {
-      .ov-tt { pointer-events:auto; touch-action:manipulation; }
+      .ov-tt.is-visible { pointer-events:auto; touch-action:manipulation; }
     }
+    .ov-tt.is-visible { visibility:visible; }
     .ov-tt-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:7px; }
     .ov-tt-time { font-weight:700; font-size:13px; color:#64748b; letter-spacing:.03em; }
     .dark .ov-tt-time { color:#94a3b8; }
@@ -140,6 +141,7 @@ export function createTooltipHandler({ renderContent }) {
   injectTooltipStyles();
   let el = null;
   let lastIdx = null;
+  let dismissed = false;
 
   return function({ chart, tooltip }) {
     if (!el) {
@@ -149,15 +151,40 @@ export function createTooltipHandler({ renderContent }) {
         el.className = "ov-tt";
         parent.style.position = "relative";
         parent.appendChild(el);
-        el.addEventListener('click', (event) => {
-          event.preventDefault();
+        const dismiss = (event) => {
+          if (event.cancelable) event.preventDefault();
           event.stopPropagation();
+          dismissed = true;
           el.style.opacity = '0';
-        });
+          el.classList.remove('is-visible');
+          lastIdx = null;
+        };
+        // Dismiss on the start of the tap, before the browser can synthesize
+        // follow-up pointer/mouse events for the chart underneath the overlay.
+        el.addEventListener('pointerdown', dismiss);
+        el.addEventListener('touchstart', dismiss, { passive: false });
+        el.addEventListener('mousedown', dismiss);
+        el.addEventListener('click', dismiss);
+        // A touch that dismisses the overlay can still produce a trailing
+        // Chart.js pointer update. Ignore it until the next intentional chart tap.
+        chart.canvas.addEventListener('pointerdown', () => { dismissed = false; });
+        chart.canvas.addEventListener('touchstart', () => { dismissed = false; }, { passive: true });
+        chart.canvas.addEventListener('mousedown', () => { dismissed = false; });
       }
     }
 
-    if (tooltip.opacity === 0) { el.style.opacity = "0"; lastIdx = null; return; }
+    if (dismissed) {
+      el.style.opacity = "0";
+      el.classList.remove('is-visible');
+      return;
+    }
+
+    if (tooltip.opacity === 0) {
+      el.style.opacity = "0";
+      el.classList.remove('is-visible');
+      lastIdx = null;
+      return;
+    }
 
     const idx = tooltip.dataPoints?.[0]?.dataIndex;
     if (idx == null) return;
@@ -167,6 +194,7 @@ export function createTooltipHandler({ renderContent }) {
       lastIdx = idx;
     }
     el.style.opacity = "1";
+    el.classList.add('is-visible');
 
     // Position beside caret; flip left if it would overflow the canvas
     const ttW = el.offsetWidth || 200;
