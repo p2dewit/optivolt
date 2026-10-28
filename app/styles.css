@@ -722,9 +722,15 @@ body {
   align-items: center;
 }
 
-.day-actuals-prev { justify-self: start; }
-.day-actuals-selector { position: relative; justify-self: center; }
-.day-actuals-next { justify-self: end; }
+.day-actuals-prev { grid-column: 1; justify-self: start; }
+.day-actuals-selector {
+  grid-column: 2;
+  position: relative;
+  justify-self: center;
+  white-space: nowrap;
+  text-align: center;
+}
+.day-actuals-next { grid-column: 3; justify-self: end; }
 
 .day-actuals-date-input {
   position: absolute;
