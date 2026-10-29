@@ -71,7 +71,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       vrmHandoverPending = false;
       victronModeConfirmed = 1;
     }
-    if (incoming.pushToVictronEnabled === true) {
+    // Confirm mode 4 when Push is enabled. Ordinary settings saves (for example
+    // chart preferences) must not look like a plan push is about to start.
+    if (incoming.pushToVictronEnabled === true && !prevSettings.pushToVictronEnabled) {
       await ensureDynamicEssMode4();
       victronModeConfirmed = 4;
     }
