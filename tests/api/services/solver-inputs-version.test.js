@@ -63,4 +63,20 @@ describe('solver-inputs versioning', () => {
     await saveSettings({ ...settings, stepSize_m: 60 });
     expect(getSolverInputsVersion()).toBe(before + 2);
   });
+
+  it('does not invalidate solver inputs when Victron push or block guard mode changes', async () => {
+    const { saveSettings } = await import('../../../api/services/settings-store.ts?' + Date.now());
+    const settings = { ...defaultSettings };
+    await saveSettings(settings);
+
+    const before = getSolverInputsVersion();
+    await saveSettings({ ...settings, pushToVictronEnabled: !settings.pushToVictronEnabled });
+    expect(getSolverInputsVersion()).toBe(before);
+
+    await saveSettings({ ...settings, liveBlockGuardMode: 'automatic' });
+    expect(getSolverInputsVersion()).toBe(before);
+
+    await saveSettings({ ...settings, maxDischargePower_W: settings.maxDischargePower_W + 1 });
+    expect(getSolverInputsVersion()).toBe(before + 1);
+  });
 });

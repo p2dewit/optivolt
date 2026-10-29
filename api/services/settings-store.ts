@@ -211,7 +211,11 @@ export async function loadSettings(): Promise<Settings> {
 
 // Display preferences do not alter the optimizer's inputs or invalidate its plan.
 function solverSettingsJson(settings: Settings): string {
-  const { tableShowKwh, tableShowDess, chartViewRange, chartFlowsResolution, chartShowNetRevenue, ...inputs } = settings;
+  const {
+    tableShowKwh, tableShowDess, chartViewRange, chartFlowsResolution, chartShowNetRevenue,
+    pushToVictronEnabled, liveBlockGuardMode,
+    ...inputs
+  } = settings;
   return JSON.stringify(inputs);
 }
 
