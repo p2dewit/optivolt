@@ -95,6 +95,10 @@ const ENERGY_MEAN_KEYS = [
   "g2l", "g2b", "pv2l", "pv2b", "pv2g", "b2l", "b2g",
   "g2ev", "pv2ev", "b2ev", "ev_charge", "ev_charge_A",
   "imp", "exp",
+  "actual_load", "actual_pv", "actual_g2l", "actual_g2b", "actual_pv2l", "actual_pv2b", "actual_pv2g", "actual_b2l", "actual_b2g",
+  "actual_g2ev", "actual_pv2ev", "actual_b2ev", "actual_imp", "actual_exp",
+  "planned_load", "planned_pv", "planned_g2l", "planned_g2b", "planned_pv2l", "planned_pv2b", "planned_pv2g", "planned_b2l", "planned_b2g",
+  "planned_g2ev", "planned_pv2ev", "planned_b2ev", "planned_imp", "planned_exp",
 ];
 const SUM_KEYS = ["importCost_cents", "exportCost_cents", "batteryWearCost_cents"];
 const SLOT_MEAN_KEYS = ["ic", "ec"]; // prices: plain mean over present slots

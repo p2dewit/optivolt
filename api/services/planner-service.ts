@@ -19,6 +19,7 @@ import { getSolverInputsVersion } from './solver-inputs-version.ts';
 import { solveLp } from './solve-runner.ts';
 import { buildWarmStartColumns } from '../../lib/warm-start.ts';
 import type { PlanRowWithDess, Data, Settings } from '../types.ts';
+import { recordSuccessfulVictronPush } from './victron-push-state.ts';
 
 // How many slots we push into Dynamic ESS
 const DESS_SLOTS = 4;
@@ -327,6 +328,7 @@ export async function computePlan({ updateData = false } = {}): Promise<ComputeP
 export async function writePlanToVictron(rows: PlanRowWithDess[], stepMin: number): Promise<void> {
   await setDynamicEssSchedule(rows, Math.min(DESS_SLOTS, rows.length), stepMin * 60);
   pushedPlanComputedAtMs = lastPlan?.computedAtMs ?? null;
+  await recordSuccessfulVictronPush();
 }
 
 export function isLastPlanPushedToVictron(): boolean {

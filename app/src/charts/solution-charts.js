@@ -71,7 +71,7 @@ function makeFlowsTooltip(rows, flowSpecs, h, showNetRevenue = false, cumulative
   });
 }
 
-export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalanceWindow = null, evSettings = null, showNetRevenue = false, nowMarker = null) {
+export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalanceWindow = null, evSettings = null, showNetRevenue = false, nowMarker = null, { splitActualPlanned = false } = {}) {
   const timestampsMs = rows.map(r => r.timestampMs);
   const axis = buildTimeAxisFromTimestamps(timestampsMs);
   const mobileChart = (canvas.clientWidth || canvas.width) <= 640;
@@ -99,16 +99,48 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
 
   const nonZeroKeys = new Set();
   for (const r of rows) for (const { key } of flowSpecs) if ((r[key] || 0) !== 0) nonZeroKeys.add(key);
-  const datasets = flowSpecs
-    .filter(spec => nonZeroKeys.has(spec.key))
-    .map(spec =>
-      dsBar(
+  const stripe = color => window.pattern?.draw('diagonal', color, undefined, 10) || color;
+  const datasets = [];
+  for (const spec of flowSpecs) {
+    if (!nonZeroKeys.has(spec.key)) continue;
+    if (!splitActualPlanned) {
+      datasets.push(dsBar(
         spec.label,
         rows.map(r => spec.sign * Math.abs(W2kWh(r[spec.key]))),
         spec.color,
-        stackId
-      )
-    );
+        stackId,
+      ));
+      continue;
+    }
+
+    const hasActual = rows.some(row => (Number(row[`actual_${spec.key}`]) || 0) !== 0);
+    const hasPlanned = rows.some(row => (Number(row[`planned_${spec.key}`]) || 0) !== 0);
+    const appendSource = source => {
+      const isPlanned = source === 'planned';
+      const color = isPlanned ? stripe(spec.color) : spec.color;
+      const dataset = dsBar(
+        spec.label,
+        rows.map(row => spec.sign * Math.abs(W2kWh(row[`${source}_${spec.key}`]))),
+        color,
+        stackId,
+      );
+      dataset.hoverBackgroundColor = isPlanned ? stripe(toRGBA(spec.color, 0.6)) : dim(spec.color);
+      dataset.borderColor = spec.color;
+      dataset.legendRepresentative = (isPlanned && !hasActual) || (!isPlanned && hasActual);
+      datasets.push(dataset);
+    };
+
+    // Keep positive actual energy at the bottom and planned energy above it.
+    // Negative bars extend down from zero, so put planned energy nearest zero
+    // and actual energy below it to preserve the same visual ordering.
+    if (spec.sign === 1) {
+      if (hasActual) appendSource('actual');
+      if (hasPlanned) appendSource('planned');
+    } else {
+      if (hasPlanned) appendSource('planned');
+      if (hasActual) appendSource('actual');
+    }
+  }
 
   const cumulativeNetEuro = [];
   let cumulativeNetCents = 0;
@@ -175,6 +207,21 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
   if (nowMarker && Number.isFinite(nowMarker.timestampMs)) {
     plugins.push({
       id: 'dayActualsNowMarker',
+      beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        if (!chartArea || !scales.x) return;
+        const index = (nowMarker.timestampMs - nowMarker.startMs) / nowMarker.stepMs;
+        if (index < 0 || index > rows.length) return;
+        const boundaryIndex = Math.max(-0.5, Math.min(index - 0.5, rows.length - 0.5));
+        const x = scales.x.getPixelForValue(boundaryIndex);
+        if (x >= chartArea.right) return;
+
+        ctx.save();
+        // Match the light slate forecast shading used by the price chart.
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+        ctx.fillRect(Math.max(chartArea.left, x), chartArea.top, chartArea.right - Math.max(chartArea.left, x), chartArea.height);
+        ctx.restore();
+      },
       afterDatasetsDraw(chart) {
         const { ctx, chartArea, scales } = chart;
         if (!chartArea || !scales.x) return;
@@ -194,8 +241,11 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
         ctx.setLineDash([]);
         ctx.fillStyle = markerColor;
         ctx.font = '600 11px sans-serif';
-        ctx.textAlign = x > chartArea.right - 48 ? 'right' : 'left';
-        ctx.fillText('Now', x + (x > chartArea.right - 48 ? -4 : 4), chartArea.top + 7);
+        ctx.textAlign = 'right';
+        ctx.fillText('Now', x - 4, chartArea.top + 7);
+        ctx.textAlign = 'left';
+        const planX = Math.min(x + 6, chartArea.right - ctx.measureText('Plan').width);
+        ctx.fillText('Plan', planX, chartArea.top + 7);
         ctx.restore();
       },
     });
@@ -207,7 +257,10 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
     options: getBaseOptions({ ...axis, yTitle: "kWh", stacked: true }, {
       ...getChartAnimations('bar', rows.length),
       plugins: {
-        legend: { labels: { font: { size: legendFontSize } } },
+        legend: { labels: {
+          font: { size: legendFontSize },
+          filter: item => !splitActualPlanned || datasets[item.datasetIndex]?.legendRepresentative !== false,
+        } },
         tooltip: {
           mode: "index",
           intersect: false,

@@ -5,6 +5,7 @@ import { SolverStatusError } from '../../lib/parse-solution.ts';
 import { planAndMaybeWrite, getLastPlan, type ComputePlanResult } from '../services/planner-service.ts';
 import { getForecastTimeRange } from '../../lib/time-series-utils.ts';
 import { getSolverInputsVersion } from '../services/solver-inputs-version.ts';
+import { getLastVictronPushAtMs } from '../services/victron-push-state.ts';
 
 const router = express.Router();
 
@@ -35,7 +36,7 @@ function planCoversNow(plan: ComputePlanResult): boolean {
   return Date.now() < lastRow.timestampMs + plan.timing.stepMin * 60_000;
 }
 
-router.get('/last', (_req: Request, res: Response, next: NextFunction) => {
+router.get('/last', async (_req: Request, res: Response, next: NextFunction) => {
   const plan = getLastPlan();
   // Only an optimal plan is worth serving: computePlan caches every solve,
   // and an infeasible/unbounded one holds all-zero garbage rows.
@@ -45,6 +46,7 @@ router.get('/last', (_req: Request, res: Response, next: NextFunction) => {
   }
   res.json({
     ...planToResponse(plan),
+    lastVictronPushAtMs: await getLastVictronPushAtMs(),
     // False when settings/data changed since this plan solved — the client
     // may still paint it, but must not skip its own recompute.
     inputsCurrent: plan.inputsVersion === getSolverInputsVersion(),
@@ -75,7 +77,10 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       writeToVictron: shouldWriteToVictron,
     });
 
-    res.json(planToResponse(plan));
+    res.json({
+      ...planToResponse(plan),
+      lastVictronPushAtMs: await getLastVictronPushAtMs(),
+    });
   } catch (error) {
     logCalculateError(error);
     if (error instanceof SolverStatusError) {

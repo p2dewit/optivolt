@@ -205,11 +205,13 @@ export function initDayActuals(els) {
       const keys = ['load', 'pv', 'imp', 'exp', 'pv2l', 'pv2b', 'pv2g', 'b2l', 'b2g', 'g2l', 'g2b', 'g2ev', 'pv2ev', 'b2ev'];
       for (const key of keys) {
         const actualPower = useActual && actual ? Number(actual[key]) || 0 : 0;
-        const planPower = planned ? Number(planned[key]) || 0 : 0;
+        const planPower = planned ? (Number(planned[key]) || 0) * remaining / SLOT_MS : 0;
         // Actual rows already encode their observed energy as an equivalent
         // 15-minute power value; keep that energy whole, then add only the
         // planned share after Now for a quarter that straddles the boundary.
-        row[key] = actualPower + planPower * (planned ? remaining : 0) / SLOT_MS;
+        row[`actual_${key}`] = actualPower;
+        row[`planned_${key}`] = planPower;
+        row[key] = actualPower + planPower;
       }
       const actualNet = useActual && actual
         ? (Number(actual.exportCost_cents) || 0) - (Number(actual.importCost_cents) || 0) - (Number(actual.batteryWearCost_cents) || 0)
@@ -237,7 +239,7 @@ export function initDayActuals(els) {
     const visibleRows = resolution === '60' ? aggregateRowsHourly(rows, 15) : rows;
     toggles.update({ hasExtended: false, resolution });
     const marker = dayOffset === 0 ? { timestampMs: new Date(payload.observedAt).getTime(), startMs: new Date(payload.start).getTime(), stepMs: resolution === '60' ? 3_600_000 : SLOT_MS } : null;
-    drawFlowsBarStackSigned(els.actualFlows, visibleRows, resolution === '60' ? 60 : 15, null, null, revenue, marker);
+    drawFlowsBarStackSigned(els.actualFlows, visibleRows, resolution === '60' ? 60 : 15, null, null, revenue, marker, { splitActualPlanned: true });
 
     const dayStart = new Date(payload.start).getTime();
     const dayEnd = new Date(payload.end).getTime();

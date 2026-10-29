@@ -114,9 +114,11 @@ export function createOptimizerController({
   // is open. Poll the cached plan and repaint only when it is newer and matches
   // the current server inputs; renderPlan updates the four plan cost amounts.
   let lastSeenPlanAt = getPlan().computedAtMs ?? 0;
+  let lastReportedPushAtMs = null;
   setInterval(async () => {
     try {
       const latest = await deps.fetchLastPlan();
+      updateLatestPushStatus(latest);
       if (
         latest?.inputsCurrent === true &&
         Array.isArray(latest.rows) &&
@@ -238,6 +240,7 @@ export function createOptimizerController({
       els.status.textContent = `Loaded existing plan${formatPlanTime(result.computedAtMs)}`;
       els.status.className = "text-sm font-medium text-ink dark:text-slate-100";
     }
+    updateLatestPushStatus(result);
     return result;
   }
 
@@ -290,7 +293,7 @@ export function createOptimizerController({
       // A throw while drawing it is a display failure, not a planning failure, so it must not
       // fall through to the outer catch and wipe a summary that computed fine.
       try {
-        updateRunStatus(solverStatus, writeToVictron, result?.computedAtMs);
+        updateRunStatus(solverStatus, writeToVictron, result?.computedAtMs, result?.lastVictronPushAtMs);
         setPlan(result);
       } catch (renderError) {
         console.error("Failed to render plan", renderError);
@@ -423,8 +426,13 @@ export function createOptimizerController({
     }
   }
 
-  function updateRunStatus(solverStatus, writeToVictron, computedAtMs) {
+  function updateRunStatus(solverStatus, writeToVictron, computedAtMs, lastVictronPushAtMs) {
     if (!els.status) return;
+
+    if (writeToVictron && Number.isFinite(lastVictronPushAtMs)) {
+      updateLatestPushStatus({ lastVictronPushAtMs });
+      return;
+    }
 
     const nonOptimal =
       typeof solverStatus === "string" &&
@@ -436,13 +444,24 @@ export function createOptimizerController({
     if (nonOptimal) {
       label = `Plan status: ${solverStatus}${formatPlanTime(computedAtMs)}`;
       colorClass = "text-amber-600 dark:text-amber-400";
-    } else if (writeToVictron) {
-      label = `Plan updated and sent to Victron${formatPlanTime(computedAtMs)}`;
     } else {
+      // A successful local recompute is not a new Victron push. Preserve the
+      // last confirmed push time when one is already known.
+      if (lastReportedPushAtMs !== null) return;
       label = `Plan updated${formatPlanTime(computedAtMs)}`;
     }
     els.status.textContent = label;
     els.status.className = `text-sm font-medium ${colorClass}`;
+  }
+
+  function updateLatestPushStatus(plan) {
+    const pushedAtMs = Number(plan?.lastVictronPushAtMs);
+    if (!els.status || !Number.isFinite(pushedAtMs) || pushedAtMs <= 0) return;
+    if (lastReportedPushAtMs !== null && pushedAtMs <= lastReportedPushAtMs) return;
+
+    lastReportedPushAtMs = pushedAtMs;
+    els.status.textContent = `Plan updated and sent to Victron${formatPlanTime(pushedAtMs)}`;
+    els.status.className = "text-sm font-medium text-emerald-600 dark:text-emerald-400";
   }
 
   function formatPlanTime(timestampMs) {
