@@ -180,7 +180,11 @@ export function drawFlowsBarStackSigned(canvas, rows, stepSize_m = 15, rebalance
         if (!chartArea || !scales.x) return;
         const index = (nowMarker.timestampMs - nowMarker.startMs) / nowMarker.stepMs;
         if (index < 0 || index > rows.length) return;
-        const x = scales.x.getPixelForValue(Math.min(index, rows.length - 0.5));
+        // Category positions are centered on each slot's bar. Convert the
+        // elapsed time from slot-start coordinates to category boundaries so
+        // Now stays inside the active slot until its actual end.
+        const boundaryIndex = Math.max(-0.5, Math.min(index - 0.5, rows.length - 0.5));
+        const x = scales.x.getPixelForValue(boundaryIndex);
         ctx.save();
         const markerColor = getChartTheme().axisTickColor;
         ctx.strokeStyle = markerColor;
