@@ -111,11 +111,47 @@ export function startDayActualsArchive(): void {
   let collectingToday = false;
   let backfill: Promise<void> | null = null;
   let backfillDone = false;
+  let boundaryRefreshDateKey: string | null = null;
+  let boundaryRefreshAttemptDateKey: string | null = null;
+  let boundaryRefreshAttempts = 0;
   const collect = async () => {
     if (collectingToday) return;
     collectingToday = true;
     try {
       const today = await fetchAndStoreDayActuals();
+      const now = new Date();
+      const localParts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+        timeZone: today.timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(now).filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+      const minutesSinceMidnight = Number(localParts.hour) * 60 + Number(localParts.minute);
+      if (boundaryRefreshAttemptDateKey !== today.dateKey) {
+        boundaryRefreshAttemptDateKey = today.dateKey;
+        boundaryRefreshAttempts = 0;
+      }
+      if (minutesSinceMidnight >= 10 && boundaryRefreshDateKey !== today.dateKey && boundaryRefreshAttempts < 6) {
+        boundaryRefreshAttempts += 1;
+        const previousDay = new Date(`${today.dateKey}T12:00:00Z`);
+        previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+        const previousDateKey = previousDay.toISOString().slice(0, 10);
+        try {
+          const refreshed = await fetchAndStoreDayActuals(now, previousDateKey);
+          const finalSlotStart = Math.floor((Date.parse(refreshed.end) - 1) / (15 * 60_000)) * (15 * 60_000);
+          const finalSlot = refreshed.rows.find(row => row.timestampMs === finalSlotStart);
+          const finalSlotComplete = Number(finalSlot?.gridObservedMinutes) >= 15
+            && Number(finalSlot?.batteryObservedMinutes) >= 15;
+          if (finalSlotComplete) {
+            boundaryRefreshDateKey = today.dateKey;
+          } else if (boundaryRefreshAttempts >= 6) {
+            console.warn(`[day-actuals] ${previousDateKey} final slot remains incomplete after ${boundaryRefreshAttempts} refresh attempts`);
+          }
+        } catch (error) {
+          console.warn(`[day-actuals] could not finalize ${previousDateKey}:`, error instanceof Error ? error.message : String(error));
+          boundaryRefreshAttempts -= 1;
+        }
+      }
       if (!backfill && !backfillDone) {
         backfill = (async () => {
           const base = new Date(`${today.dateKey}T12:00:00Z`);

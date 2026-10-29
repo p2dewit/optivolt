@@ -118,17 +118,13 @@ export function dayActualsTooltipPrices(actual, planned) {
   };
 }
 
-export function actualTotalsByCoverage(totals, quality, isHistorical) {
+export function actualTotalsByCoverage(totals) {
   if (!totals) return null;
-  const gridComplete = !isHistorical || quality.missingGridMs === 0;
-  const importComplete = gridComplete && (!isHistorical || quality.missingImportPriceMs === 0);
-  const exportComplete = gridComplete && (!isHistorical || quality.missingExportPriceMs === 0);
-  const batteryComplete = !isHistorical || quality.missingBatteryMs === 0;
   return {
-    result_cents: importComplete && exportComplete && batteryComplete ? totals.result_cents : null,
-    costs_cents: importComplete ? totals.costs_cents : null,
-    revenue_cents: exportComplete ? totals.revenue_cents : null,
-    batteryCosts_cents: batteryComplete ? totals.batteryCosts_cents : null,
+    result_cents: Number.isFinite(totals.result_cents) ? totals.result_cents : null,
+    costs_cents: Number.isFinite(totals.costs_cents) ? totals.costs_cents : null,
+    revenue_cents: Number.isFinite(totals.revenue_cents) ? totals.revenue_cents : null,
+    batteryCosts_cents: Number.isFinite(totals.batteryCosts_cents) ? totals.batteryCosts_cents : null,
   };
 }
 
@@ -253,7 +249,7 @@ export function initDayActuals(els) {
     const totals = dayOffset === 0
       ? addActualAndPlanned(todayPayload?.totals, plannedRest)
       : dayOffset < 0 ? payload.totals : plannedTotals?.totals;
-    const displayedTotals = actualTotalsByCoverage(totals, payload.quality, dayOffset < 0);
+    const displayedTotals = actualTotalsByCoverage(totals);
     setFinancialValue(els.dayResult, displayedTotals?.result_cents);
     setNeutralFinancialValue(els.dayCosts, displayedTotals?.costs_cents);
     setFinancialValue(els.dayRevenue, displayedTotals?.revenue_cents);
