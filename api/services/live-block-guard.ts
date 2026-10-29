@@ -4,11 +4,12 @@ import { getLastPlan, isLastPlanPushedToVictron } from './planner-service.ts';
 import { chargingPower, dischargingPower, describeLiveBlock, type Direction } from './live-block-detection.ts';
 
 const POLL_MS = 60_000;
-const SOC_TRIGGER_MARGIN = 1;
+const SOC_TRIGGER_MARGIN = 2;
 const SOC_EPSILON = 0.5;
 let timer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 let lastAdjustment: { planAt: number; blockEnd: number; direction: Direction; target: number } | null = null;
+let qualifiedBlock: { startAt: number; endAt: number; direction: Direction } | null = null;
 const state: Record<string, unknown> = {
   mode: 'off', soc_percent: null, activeTarget_percent: null, plannedTarget_percent: null, observedAt: null, status: 'Off',
   reason: null, proposedTarget_percent: null, writtenTarget_percent: null, adjustmentDue: null,
@@ -167,7 +168,50 @@ async function tick(): Promise<void> {
     state.plannedTarget_percent = row.dess.socTarget_percent;
     const currentTarget = Math.round(row.dess.socTarget_percent);
     const victronTarget = state.activeTarget_percent;
-    const block = describeLiveBlock(plan.rows, index, soc, settings, stepMs);
+    let block = describeLiveBlock(plan.rows, index, soc, settings, stepMs);
+    const activeStartAt = row.timestampMs;
+    const activeDirection = block.activeDirection;
+    const plannedEndRow = plan.rows[block.endIndex];
+    const plannedBlockEndAt = plannedEndRow ? plannedEndRow.timestampMs + stepMs : Number.NaN;
+
+    // Qualify a block from its original first slot, then retain that decision
+    // through contiguous lower-power slots and plan refreshes.
+    const startsAtHighPower = !block.isFuture && block.startedHighPower;
+    if (startsAtHighPower && activeDirection && Number.isFinite(plannedBlockEndAt)) {
+      if (!block.recognized || block.basis !== 'high-power') {
+        block = {
+          ...block,
+          recognized: true,
+          basis: 'high-power',
+          startIndex: block.blockStartIndex,
+          slots: block.slots.map(slot => ({
+            ...slot,
+            inBlock: slot.index >= block.blockStartIndex && slot.index <= block.endIndex,
+          })),
+        };
+      }
+      qualifiedBlock = {
+        startAt: plan.rows[block.blockStartIndex]?.timestampMs ?? row.timestampMs,
+        endAt: plannedBlockEndAt,
+        direction: activeDirection,
+      };
+    } else if (qualifiedBlock && activeDirection === qualifiedBlock.direction
+      && activeStartAt >= qualifiedBlock.startAt && activeStartAt < qualifiedBlock.endAt
+      && Number.isFinite(plannedBlockEndAt)) {
+      qualifiedBlock = { ...qualifiedBlock, endAt: Math.max(qualifiedBlock.endAt, plannedBlockEndAt) };
+      block = {
+        ...block,
+        recognized: true,
+        basis: 'high-power',
+        startIndex: block.blockStartIndex,
+        slots: block.slots.map(slot => ({
+          ...slot,
+          inBlock: slot.index >= block.blockStartIndex && slot.index <= block.endIndex,
+        })),
+      };
+    } else {
+      qualifiedBlock = null;
+    }
     state.blockPreview = block;
     const direction = block.direction;
     state.direction = block.activeDirection ?? 'idle';
@@ -178,11 +222,11 @@ async function tick(): Promise<void> {
       state.reason = `Slots ${block.startIndex + 1}–${block.endIndex + 1} form a future ${futureLabel} block; preview only until the block becomes active`;
       return;
     }
-    if (!block.recognized || direction == null) {
+    if (!block.recognized || block.basis !== 'high-power' || direction == null) {
       state.status = 'Monitoring SoC; no qualifying continuous block';
       state.reason = direction == null
         ? 'The active slot is idle or has simultaneous charging and discharging'
-        : 'No high-power slot in the continuous block, and current SoC is outside the taper region';
+        : 'The continuous block did not start with a high-power slot';
       return;
     }
     const label = direction === 'charge' ? 'charging' : 'discharging';
@@ -200,9 +244,8 @@ async function tick(): Promise<void> {
     // target may differ from the optimizer's current slot target.
     const triggerTarget = direction === 'charge' ? Math.min(currentTarget, activeTarget) : Math.max(currentTarget, activeTarget);
     state.triggerTarget_percent = triggerTarget;
-    const adjustmentDue = direction === 'charge'
+    const socTriggerDue = direction === 'charge'
       ? soc >= triggerTarget - SOC_TRIGGER_MARGIN : soc <= triggerTarget + SOC_TRIGGER_MARGIN;
-    state.adjustmentDue = adjustmentDue;
 
     const capacityWh = settings.batteryCapacity_Wh;
     const chargeEfficiency = settings.chargeEfficiency_percent / 100;
@@ -221,6 +264,7 @@ async function tick(): Promise<void> {
     // Re-estimate only the remaining duration from live SoC. Discharge includes
     // output to home, grid and EV, efficiency loss and inverter idle drain.
     let remainingWh = 0;
+    let activeSlotRemainingWh = 0;
     const nowInSlot = Math.max(0, Math.min(stepMs, now - row.timestampMs));
     for (let i = index; i <= blockEnd; i += 1) {
       const r = plan.rows[i];
@@ -228,7 +272,14 @@ async function tick(): Promise<void> {
       const batteryPower = direction === 'charge' ? chargingPower(r) * chargeEfficiency
         : Math.max(0, dischargingPower(r) / dischargeEfficiency - chargingPower(r) * chargeEfficiency + settings.idleDrain_W);
       remainingWh += batteryPower * durationHours;
+      if (i === index) activeSlotRemainingWh = batteryPower * durationHours;
     }
+    const activeSlotRemainingPercent = activeSlotRemainingWh / capacityWh * 100;
+    const targetReachedBySlotEnd = direction === 'charge'
+      ? soc + activeSlotRemainingPercent >= triggerTarget - SOC_EPSILON
+      : soc - activeSlotRemainingPercent <= triggerTarget + SOC_EPSILON;
+    const adjustmentDue = socTriggerDue && targetReachedBySlotEnd;
+    state.adjustmentDue = adjustmentDue;
     const remainingPercent = remainingWh / capacityWh * 100;
     const dischargeFloor = Math.max(minTarget, Math.round(plan.rows[blockEnd].dess.socTarget_percent));
     const target = direction === 'charge'
@@ -246,9 +297,14 @@ async function tick(): Promise<void> {
     }
 
     state.proposedTarget_percent = target;
-    if (!adjustmentDue) {
+    if (!socTriggerDue) {
       state.status = `Monitoring SoC; waiting for the ${label} target`;
-      state.reason = `No adjustment is due until SoC comes within ${SOC_TRIGGER_MARGIN} percentage point of ${Math.round(triggerTarget)}%; estimated next target ${target}%, recalculated when the guard next checks`;
+      state.reason = `No adjustment is due until SoC comes within ${SOC_TRIGGER_MARGIN} percentage points of ${Math.round(triggerTarget)}%; estimated next target ${target}%, recalculated when the guard next checks`;
+      return;
+    }
+    if (!targetReachedBySlotEnd) {
+      state.status = 'Monitoring SoC; slot target is not at risk';
+      state.reason = `Planned power in the active slot is not enough to reach ${Math.round(triggerTarget)}% before the slot ends`;
       return;
     }
     if (settings.liveBlockGuardMode !== 'automatic') {

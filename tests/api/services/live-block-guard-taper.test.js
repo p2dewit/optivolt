@@ -15,22 +15,22 @@ beforeEach(async () => {
   guard = await import('../../../api/services/live-block-guard.ts');
 });
 afterEach(() => vi.useRealTimers());
-it('allows a taper block at the one-point margin, respects the ceiling and avoids duplicate writes', async () => {
+it('does not adjust taper-only blocks without a max-power start', async () => {
   await guard.refreshLiveBlockGuard();
-  expect(mocks.write).toHaveBeenCalledTimes(4);
+  expect(mocks.write).not.toHaveBeenCalled();
   expect(guard.getLiveBlockGuardStatus().blockPreview.basis).toBe('soc-taper-region');
-  for (const [, target] of mocks.write.mock.calls) expect(target).toBeLessThanOrEqual(95);
-  await guard.refreshLiveBlockGuard(); expect(mocks.write).toHaveBeenCalledTimes(4);
+  expect(guard.getLiveBlockGuardStatus().proposedTarget_percent).toBeNull();
 });
 it('monitor proposes but never writes', async () => {
   settings.liveBlockGuardMode = 'monitor';
+  plan.rows.forEach((r, i) => { r.g2b = i < 3 ? 5000 : 0; r.dess.socTarget_percent = 86 + i; });
   await guard.refreshLiveBlockGuard();
   expect(guard.getLiveBlockGuardStatus().proposedTarget_percent).toBeGreaterThan(86);
   expect(mocks.write).not.toHaveBeenCalled();
 });
 it('retains discharge reserve and minimum SoC near empty', async () => {
   mocks.soc.mockResolvedValue(14); mocks.target.mockResolvedValue(13);
-  plan.rows.forEach((r, i) => { r.g2b = 0; r.b2l = 500; r.dess.socTarget_percent = 13 - i; });
+  plan.rows.forEach((r, i) => { r.g2b = 0; r.b2l = 5000; r.dess.socTarget_percent = 13 - i; });
   await guard.refreshLiveBlockGuard();
   expect(mocks.write).toHaveBeenCalledTimes(4);
   for (const [, target] of mocks.write.mock.calls) expect(target).toBe(10);
@@ -72,7 +72,7 @@ it('waits for the SoC trigger before extending the active block', async () => {
   const trigger = before.triggerTarget_percent;
   expect(trigger).toEqual(expect.any(Number));
 
-  // Reach the configured one-percentage-point trigger margin.
+  // Reach the configured two-percentage-point trigger margin.
   mocks.soc.mockResolvedValue(trigger - 0.5);
   await guard.refreshLiveBlockGuard();
 
@@ -82,6 +82,38 @@ it('waits for the SoC trigger before extending the active block', async () => {
   expect(after.writtenTarget_percent).toBeLessThanOrEqual(95);
   expect(mocks.ensureMode4).toHaveBeenCalledTimes(1);
   expect(mocks.write.mock.calls.map(([slot]) => slot)).toEqual([0, 1, 2]);
+});
+
+it('keeps a max-power block qualified when the next slot drops to lower discharge power', async () => {
+  const discharge = [5000, 2500, 2500, 0];
+  const targets = [50, 49, 48, 48];
+  plan.rows.forEach((r, i) => {
+    r.g2b = 0; r.pv2b = 0; r.b2l = discharge[i]; r.b2g = 0; r.b2ev = 0;
+    r.dess.socTarget_percent = targets[i];
+  });
+  mocks.soc.mockResolvedValue(53);
+  mocks.target.mockResolvedValue(50);
+
+  // The original high-power slot is active, but SoC is still outside the 2 pp trigger.
+  await guard.refreshLiveBlockGuard();
+  expect(guard.getLiveBlockGuardStatus()).toMatchObject({
+    adjustmentDue: false,
+    blockPreview: { recognized: true, startedHighPower: true, startIndex: 0, endIndex: 2 },
+  });
+  expect(mocks.write).not.toHaveBeenCalled();
+
+  // At the slot boundary, the active slot is only half power. The guard must
+  // retain the qualification from slot 0 and adjust the remaining block.
+  vi.setSystemTime(new Date('2026-10-25T12:15:00Z'));
+  mocks.soc.mockResolvedValue(52);
+  await guard.refreshLiveBlockGuard();
+
+  expect(guard.getLiveBlockGuardStatus()).toMatchObject({
+    adjustmentDue: true,
+    writtenTarget_percent: 48,
+    blockPreview: { recognized: true, basis: 'high-power', startedHighPower: true, startIndex: 0, endIndex: 2 },
+  });
+  expect(mocks.write.mock.calls.map(([slot, target]) => [slot, target])).toEqual([[1, 48], [2, 48]]);
 });
 
 it('never proposes or writes an early target for standby slots ahead of slot four', async () => {
@@ -124,6 +156,8 @@ it('browser-only recognition never authorizes automatic writes', async () => {
   mocks.plan.mockReturnValue(undefined);
   mocks.plan.mockImplementation(() => undefined);
   mocks.pushed.mockReturnValue(true);
+  mocks.soc.mockResolvedValue(85);
+  plan.rows.forEach((r, i) => { r.g2b = i < 3 ? 5000 : 0; });
   await guard.setLiveBlockGuardMonitorPlan({ ...plan, solverStatus: 'Optimal' });
   await guard.refreshLiveBlockGuard();
   expect(guard.getLiveBlockGuardStatus().blockPreview.recognized).toBe(true);

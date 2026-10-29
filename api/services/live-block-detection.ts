@@ -1,6 +1,8 @@
 import type { Settings } from '../types.ts';
 
 const HIGH_POWER_FRACTION = 0.75;
+// The guard only protects blocks whose original first slot is within 5% of max.
+const MAX_POWER_FRACTION = 0.95;
 // User-supplied taper regions. These are recognition hints, not measured BMS limits.
 const CHARGE_TAPER_SOC = 85;
 const DISCHARGE_TAPER_SOC = 15;
@@ -30,20 +32,28 @@ function directionOf(row: PowerRow, settings: Limits): Direction | null {
   return c === d ? null : c ? 'charge' : 'discharge';
 }
 
-/** Only inspects the four represented schedule slots, starting at the active slot. */
+/** Inspects the four represented slots and keeps the original block start visible. */
 export function detectLiveBlock(rows: readonly BlockRow[], index: number, soc: number, settings: Limits, stepMs: number) {
   const direction = rows[index] ? directionOf(rows[index], settings) : null;
+  let start = index;
   let end = index;
   if (index < 0 || index >= 4 || !Number.isFinite(stepMs) || stepMs <= 0) {
-    return { direction: null, end, recognized: false, basis: 'none' as const, taperRegion: false };
+    return { direction: null, start, end, startedHighPower: false, recognized: false, basis: 'none' as const, taperRegion: false };
   }
   if (direction) {
+    // Include elapsed slots from the same contiguous block. Eligibility belongs
+    // to its original first slot, so a lower-power tail keeps that qualification.
+    while (start > 0
+      && rows[start].timestampMs === rows[start - 1].timestampMs + stepMs
+      && directionOf(rows[start - 1], settings) === direction) start--;
     while (end + 1 < Math.min(rows.length, 4)
       && rows[end + 1].timestampMs === rows[end].timestampMs + stepMs
       && directionOf(rows[end + 1], settings) === direction) end++;
   }
   const limit = direction === 'charge' ? settings.maxChargePower_W : settings.maxDischargePower_W;
   const limitValid = Number.isFinite(limit) && limit > 0;
+  const startPower = direction === 'charge' ? chargingPower(rows[start]) : dischargingPower(rows[start]);
+  const startedHighPower = direction != null && limitValid && startPower >= limit * MAX_POWER_FRACTION;
   const high = direction != null && limitValid && rows.slice(index, end + 1).some(row =>
     (direction === 'charge' ? chargingPower(row) : dischargingPower(row)) >= limit * HIGH_POWER_FRACTION);
   // The caller supplies observed SoC for an active block; future previews use planned start SoC.
@@ -51,7 +61,7 @@ export function detectLiveBlock(rows: readonly BlockRow[], index: number, soc: n
     : direction === 'discharge' ? soc <= DISCHARGE_TAPER_SOC : false);
   const recognized = direction != null && limitValid && (high || taperRegion);
   const basis = high ? 'high-power' as const : recognized ? 'soc-taper-region' as const : 'none' as const;
-  return { direction, end, recognized, basis, taperRegion };
+  return { direction, start, end, startedHighPower, recognized, basis, taperRegion };
 }
 
 export function describeLiveBlock(rows: readonly BlockRow[], index: number, soc: number, settings: Limits, stepMs: number) {
@@ -81,9 +91,11 @@ export function describeLiveBlock(rows: readonly BlockRow[], index: number, soc:
     recognized: block.recognized,
     direction: block.direction,
     basis: block.basis,
+    startedHighPower: block.startedHighPower,
     taperRegion: block.taperRegion,
     taperThreshold_percent: block.direction === 'charge' ? CHARGE_TAPER_SOC : DISCHARGE_TAPER_SOC,
-    startIndex,
+    startIndex: startIndex > index ? startIndex : (block.recognized ? block.start : index),
+    blockStartIndex: block.start,
     endIndex: block.end,
     slots: rows.slice(0, 4).map((row, slotIndex) => {
       const charge = chargingPower(row), discharge = dischargingPower(row);
