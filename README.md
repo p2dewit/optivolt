@@ -2,7 +2,7 @@
 
 ## Changes in this fork — OptiVolt DESS 1.0
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.0** in the page header identifies this personal fork.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.1** in the page header identifies this personal fork.
 
 ## Optimizer tab overview
 
@@ -47,8 +47,12 @@ Every **60 seconds**, the guard checks the current SoC and Victron target. It ex
 - **Tapering power:** when charging above 85% SoC or discharging below 15% SoC, blocks at lower power can also be detected. This is an SoC-based assumption, not a reading of BMS power limits.
 - **Standby compensation is not charging:** charging power that only compensates for configured standby losses after efficiency is applied does not connect an idle slot to a later charging block. For example, 42.105 W at 95% efficiency compensates for about 40 W of losses and does not count as an active charging start.
 - **Preview without early adjustment:** a future block visible only in slot 4 can still be displayed. The guard does not suggest a new current SoC target for it and does not write anything until the block becomes active. A single final slot is not extended when no following connected slot is available.
-- **Adjust within one percentage point:** if the target could interrupt the active block, a new target is calculated from the remaining planned energy, capacity, and efficiencies, within the SoC limits. This is an SoC margin, not an exact one-minute-to-target prediction.
+- **Adjust within two percentage points:** if the target could interrupt the active block, a new target is calculated from the remaining planned energy, capacity, and efficiencies, within the SoC limits. This is an SoC margin, not an exact one-minute-to-target prediction.
 - **Duplicate changes are avoided**, and the relevant settings and plan are checked again before an automatic write.
+
+![Day Actuals power-flow charts for Wednesday and Friday, with an arrow from Wednesday to Friday](docs/images/day-actuals-history-comparison.png)
+
+*Charge and Discharge block before (left) and after (right) Live block guard activation. The Live block guard solves the gap pattern in multi-slot charging and discharging blocks and as such creates an actual situation much closer to the planned one and in that way a more efficient and optimal solution.*
 
 ![Example of the live block guard tooltip](docs/images/live-block-guard-example.png)
 
