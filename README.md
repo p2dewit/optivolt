@@ -1,8 +1,8 @@
 # OptiVolt 🔋
 
-## Changes in this fork — OptiVolt DESS 1.0
+## Changes in this fork — OptiVolt DESS 1.2
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.1** in the page header identifies this personal fork.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.2** in the page header identifies this personal fork.
 
 ## Optimizer tab overview
 
