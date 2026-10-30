@@ -24,9 +24,9 @@ The Settings panel contains optimizer inputs and quick settings, recompute optio
 
 Battery SoC, Energy Prices (including the DA reliability · 30d indicator), and Predicted Load and Solar charts help explain the result. The Schedule Table provides the slot-by-slot plan, with display options for DESS details and energy values.
 
-![Illustrative OptiVolt 1.0 optimizer controls, diagnostics, charts, and schedule table](docs/images/optimizer-controls-and-diagnostics.svg)
+![Optimizer Schedule Table showing per-slot forecasts, energy flows, prices, costs, and SoC](docs/images/optimizer-schedule-table.png)
 
-*Illustrative interface view. Example settings, status, and chart data are fictional.*
+*The Schedule Table shows forecast and power-flow details for each time slot.*
 
 ### Prices, strategies, and returns
 
