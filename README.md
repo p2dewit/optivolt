@@ -8,9 +8,9 @@ This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt),
 
 The **Optimizer** tab is the main overview for planning and operating the home battery. It brings the selected strategy, measured energy flows, the optimized schedule, run controls, and supporting charts together on one page.
 
-![Illustrative OptiVolt 1.0 Optimizer overview showing strategy, day actuals, and optimized plan](docs/images/optimizer-overview.svg)
+![OptiVolt Optimizer tab overview with Strategy, Day Actuals, Optimized Plan, Settings, and charts](docs/images/optimizer-tab-overview.png)
 
-*Illustrative interface view. All figures and chart values are fictional examples.*
+*Overview of the optimizer tab of Optivolt v1.1*
 
 ### Strategy and power-flow plans
 
