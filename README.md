@@ -10,7 +10,7 @@ The **Optimizer** tab is the main overview for planning and operating the home b
 
 ![OptiVolt Optimizer tab overview with Strategy, Day Actuals, Optimized Plan, Settings, and charts](docs/images/optimizer-tab-overview.png)
 
-*Overview of the optimizer tab of Optivolt v1.1*
+*Overview of the optimizer tab of Optivolt v1.2*
 
 ### Strategy and power-flow plans
 
