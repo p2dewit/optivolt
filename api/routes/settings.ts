@@ -110,13 +110,18 @@ async function recalculateStoredPrices(settings: Settings, previous: Settings): 
   let changed = false;
 
   if (settings.dataSources.prices === 'api' && previous.dataSources.prices === 'api') {
-    const importBase = data.importPriceBase ?? toBaseEpexImportPrices(data.importPrice, previous);
-    const exportBase = data.exportPriceBase ?? toBaseEpexExportPrices(data.exportPrice, previous);
-    data.importPriceBase = importBase;
-    data.exportPriceBase = exportBase;
-    data.importPrice = toAllInImportPrices(importBase, settings);
-    data.exportPrice = toAllInExportPrices(exportBase, settings);
-    changed = true;
+    // Only API-pushed series carry an authoritative EPEX base series. Older
+    // stored prices may have come from VRM/DESS and already include Victron's
+    // independent formulas; never reverse-engineer those as if they were raw
+    // EPEX prices. The next HA/API push stores the new configured all-in view.
+    if (data.importPriceBase) {
+      data.importPrice = toAllInImportPrices(data.importPriceBase, settings);
+      changed = true;
+    }
+    if (data.exportPriceBase) {
+      data.exportPrice = toAllInExportPrices(data.exportPriceBase, settings);
+      changed = true;
+    }
   }
 
   const importForecastBase = data.importPriceForecastBase

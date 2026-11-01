@@ -30,7 +30,8 @@ Battery SoC, Energy Prices (including the DA reliability · 30d indicator), and 
 
 ### Prices, strategies, and returns
 
-- **All-in tariffs:** Energy tax, import surcharge, selling costs, VAT, and a net-metering option are applied centrally to API prices and price forecasts. The base price series are retained so that tariff changes can be reapplied without double counting. Tariff settings use €/kWh; price series use cents/kWh.
+- **Price sources:** Choose **Victron VRM** to use DESS prices, or **API** to use current prices pushed from Home Assistant and the configured Price Forecast URL. In API mode the optimizer uses the same all-in series shown in Energy Prices and does not fetch prices from VRM.
+- **All-in tariffs:** Energy tax, import surcharge, selling costs, VAT, and a net-metering option are applied centrally to HA/API prices and price forecasts. The base price series are retained so that tariff changes can be reapplied without double counting. Tariff settings use €/kWh; price series use cents/kWh.
 - **Import:** `(base price + import surcharge + energy tax) × VAT factor`. **Export:** `(base price − selling costs + any energy tax under net metering) × VAT factor`, with amounts converted to the same unit. This is the implemented calculation; enter values that match your own contract.
 - **New API prices refresh the plan:** saving the settings triggers a new calculation. This automatic recalculation does not write a plan to Victron.
 - **Forecasts from HTTP(S) or a local `file:` source:** the configured forecast feed can extend the horizon beyond known prices. Actual prices remain authoritative. The extended horizon itself was already present upstream.

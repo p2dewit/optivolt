@@ -281,8 +281,16 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
       const gridW = gridReadings.reduce<number>((sum, value) => sum + Number(value), 0);
       const imp = Math.max(0, gridW);
       const exp = Math.max(0, -gridW);
-      const ic = seriesValueAt(historyPrices.importPrice, intervalStart) ?? seriesValueAt(data.importPrice, intervalStart);
-      const ec = seriesValueAt(historyPrices.exportPrice, intervalStart) ?? seriesValueAt(data.exportPrice, intervalStart);
+      // API mode uses the same HA base-price and tariff path as pushed API data.
+      // VRM mode retains its selected VRM series as the fallback.
+      const ic = seriesValueAt(historyPrices.importPrice, intervalStart)
+        ?? (settings.dataSources.prices === 'api'
+          ? data.importPriceBase ? seriesValueAt(data.importPrice, intervalStart) : null
+          : seriesValueAt(data.importPrice, intervalStart));
+      const ec = seriesValueAt(historyPrices.exportPrice, intervalStart)
+        ?? (settings.dataSources.prices === 'api'
+          ? data.exportPriceBase ? seriesValueAt(data.exportPrice, intervalStart) : null
+          : seriesValueAt(data.exportPrice, intervalStart));
       if (imp === 0) {
         // No energy needs pricing for this interval.
       } else if (ic !== null) {

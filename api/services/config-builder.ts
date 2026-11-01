@@ -36,6 +36,10 @@ export function buildSolverConfigFromSettings(
   nowMs = getQuarterStart(new Date(), settings.stepSize_m),
   evState?: { pluggedIn: boolean; soc_percent: number },
 ): { cfg: SolverConfig; pricesKnownUntilMs?: number } {
+  if (settings.dataSources.prices === 'api' && (!data.importPriceBase || !data.exportPriceBase)) {
+    throw new HttpError(422, 'Waiting for Home Assistant/API buy and sell prices; push both price series before recomputing.');
+  }
+
   // Extended horizon: append forecast prices past the end of the actual price
   // series. Actual values always win — the forecast never overrides them, and
   // pricesKnownUntilMs marks where actuals end so the UI can flag the rest.
