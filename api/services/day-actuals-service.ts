@@ -41,17 +41,41 @@ function allInPricesFromHistory(history: Awaited<ReturnType<typeof fetchHaHistor
   const lastSlot = Math.floor((endMs - 1) / QUARTER_MS) * QUARTER_MS;
   if (lastSlot < firstSlot) return { importPrice: null, exportPrice: null };
   const baseBySlot = new Map<number, number>();
+  const explicitSlots = new Set<number>();
   const states = history.flat().filter(state => state.entity_id === EPEX_PRICE)
     .sort((a, b) => Date.parse(a.last_updated) - Date.parse(b.last_updated));
   for (const state of states) {
+    // The EPEX sensor's state only changes when its current value changes.
+    // Its attributes contain the timestamped quarter-hour price series, which
+    // remains complete even when HA does not record a state transition for a
+    // slot whose value repeats. Prefer these timestamped values over assigning
+    // state.state to last_updated's quarter.
+    const attributes = state.attributes as Record<string, unknown> | undefined;
+    const timestamps = Array.isArray(attributes?.s) ? attributes.s : [];
+    const prices = Array.isArray(attributes?.t) ? attributes.t : [];
+    const seriesLength = Math.min(timestamps.length, prices.length);
+    for (let index = 0; index < seriesLength; index += 1) {
+      const rawTimestamp = Number(timestamps[index]);
+      const timestamp = rawTimestamp > 0 && rawTimestamp < 1e12 ? rawTimestamp * 1000 : rawTimestamp;
+      const price = prices[index] === null || prices[index] === undefined || prices[index] === ''
+        ? Number.NaN
+        : Number(prices[index]);
+      if (!Number.isFinite(timestamp) || !Number.isFinite(price)) continue;
+      const slot = Math.floor(timestamp / QUARTER_MS) * QUARTER_MS;
+      if (slot >= firstSlot && slot <= lastSlot) {
+        baseBySlot.set(slot, price);
+        explicitSlots.add(slot);
+      }
+    }
+
+    // Retain support for HA price sensors without a timestamped series, but
+    // never overwrite a value already mapped from the explicit s/t arrays.
     const timestamp = Date.parse(state.last_updated);
     const basePrice = Number(state.state);
     if (!Number.isFinite(timestamp) || !Number.isFinite(basePrice)) continue;
     const slot = Math.floor(timestamp / QUARTER_MS) * QUARTER_MS;
     if (slot < firstSlot || slot > lastSlot) continue;
-    // HA updates the price sensor a few seconds after the quarter starts;
-    // retain the latest update within that quarter.
-    baseBySlot.set(slot, basePrice);
+    if (!explicitSlots.has(slot)) baseBySlot.set(slot, basePrice);
   }
   if (baseBySlot.size === 0) return { importPrice: null, exportPrice: null };
   const values = Array.from({ length: Math.floor((lastSlot - firstSlot) / QUARTER_MS) + 1 }, (_, index) =>
@@ -123,6 +147,8 @@ interface QuarterBucket {
   pvObservedMs: number;
   missingImportPriceMs: number;
   missingExportPriceMs: number;
+  pricedImportMs: number;
+  pricedExportMs: number;
   flowWh: Record<FlowKey, number>;
   costs_cents: number;
   revenue_cents: number;
@@ -141,6 +167,8 @@ function makeBucket(timestampMs: number, data: Awaited<ReturnType<typeof loadDat
     pvObservedMs: 0,
     missingImportPriceMs: 0,
     missingExportPriceMs: 0,
+    pricedImportMs: 0,
+    pricedExportMs: 0,
     flowWh: Object.fromEntries(FLOW_KEYS.map(key => [key, 0])) as Record<FlowKey, number>,
     costs_cents: 0,
     revenue_cents: 0,
@@ -224,6 +252,8 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
     missingPvMs: 0,
     missingImportPriceMs: 0,
     missingExportPriceMs: 0,
+    pricedImportMs: 0,
+    pricedExportMs: 0,
     pvSensorCount: activePvIds.length,
   };
   const batteryCostRate = Number(settings.batteryCost_cent_per_kWh);
@@ -257,6 +287,8 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
         // No energy needs pricing for this interval.
       } else if (ic !== null) {
         bucket.costs_cents += imp * durationHours / 1000 * ic;
+        bucket.pricedImportMs += durationMs;
+        quality.pricedImportMs += durationMs;
       } else {
         quality.missingImportPriceMs += durationMs;
         bucket.missingImportPriceMs += durationMs;
@@ -265,6 +297,8 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
         // No energy needs pricing for this interval.
       } else if (ec !== null) {
         bucket.revenue_cents += exp * durationHours / 1000 * ec;
+        bucket.pricedExportMs += durationMs;
+        quality.pricedExportMs += durationMs;
       } else {
         quality.missingExportPriceMs += durationMs;
         bucket.missingExportPriceMs += durationMs;
@@ -330,12 +364,18 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
       pvObservedMinutes: bucket.pvObservedMs / 60_000,
       missingImportPriceMinutes: bucket.missingImportPriceMs / 60_000,
       missingExportPriceMinutes: bucket.missingExportPriceMs / 60_000,
+      pricedImportMinutes: bucket.pricedImportMs / 60_000,
+      pricedExportMinutes: bucket.pricedExportMs / 60_000,
       missing: bucket.chartObservedMs === 0,
     });
   }
 
-  const costs = quality.gridObservedMs > 0 && quality.missingImportPriceMs === 0 ? totals.costs_cents : null;
-  const revenue = quality.gridObservedMs > 0 && quality.missingExportPriceMs === 0 ? totals.revenue_cents : null;
+  // Keep priced portions visible if a small number of slots lack prices. The
+  // quality fields report the gap so the UI can identify these as partial.
+  const costs = quality.gridObservedMs > 0
+    && (quality.missingImportPriceMs === 0 || quality.pricedImportMs > 0) ? totals.costs_cents : null;
+  const revenue = quality.gridObservedMs > 0
+    && (quality.missingExportPriceMs === 0 || quality.pricedExportMs > 0) ? totals.revenue_cents : null;
   const batteryCosts = quality.batteryObservedMs > 0 ? totals.batteryCosts_cents : null;
   return {
     dateKey,

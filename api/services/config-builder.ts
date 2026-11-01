@@ -5,6 +5,11 @@ import { buildGreenSocTargets } from './green-strategy.ts';
 import type { SolverConfig, TimeSeries } from '../../lib/types.ts';
 import type { Settings, Data } from '../types.ts';
 
+// Model and sensor noise can put an otherwise valid household-load slot a few
+// watts below zero. Clamp that tiny residual; a larger negative value usually
+// points to a sign/configuration problem and must fail with a useful slot.
+const NEGATIVE_LOAD_NOISE_TOLERANCE_W = 10;
+
 function getSeriesEndMs(source: TimeSeries): number {
   const step = source.step ?? 15;
   return new Date(source.start).getTime() + source.values.length * step * 60_000;
@@ -96,9 +101,34 @@ export function buildSolverConfigFromSettings(
   }
 
   const alignedEndMs = nowMs + slotCount * stepMs;
+  const rawLoad_W = extractWindow(data.load, nowMs, alignedEndMs, settings.stepSize_m);
+  const negativeLoadSlots = rawLoad_W
+    .map((value, index) => ({ value, index, timestampMs: nowMs + index * stepMs }))
+    .filter(slot => slot.value < 0);
+  const invalidLoadSlots = negativeLoadSlots.filter(slot => slot.value < -NEGATIVE_LOAD_NOISE_TOLERANCE_W);
+  if (invalidLoadSlots.length > 0) {
+    const first = invalidLoadSlots[0];
+    throw new HttpError(422,
+      `Load series has an invalid negative value (${first.value} W) at ${new Date(first.timestampMs).toISOString()}; expected nonnegative household demand.`,
+      { details: { invalidLoadSlots: invalidLoadSlots.slice(0, 5).map(slot => ({
+        time: new Date(slot.timestampMs).toISOString(),
+        value_W: slot.value,
+      })) } },
+    );
+  }
+  if (negativeLoadSlots.length > 0) {
+    console.warn('[calculate] clamped small negative load values to zero', {
+      count: negativeLoadSlots.length,
+      examples: negativeLoadSlots.slice(0, 5).map(slot => ({
+        time: new Date(slot.timestampMs).toISOString(),
+        value_W: slot.value,
+      })),
+    });
+  }
+  const load_W = rawLoad_W.map(value => Math.max(0, value));
 
   const base: SolverConfig = {
-    load_W:      extractWindow(data.load,   nowMs, alignedEndMs, settings.stepSize_m),
+    load_W,
     pv_W:        extractWindow(data.pv,     nowMs, alignedEndMs, settings.stepSize_m),
     importPrice: extractWindow(importPrice, nowMs, alignedEndMs, settings.stepSize_m),
     exportPrice: extractWindow(exportPrice, nowMs, alignedEndMs, settings.stepSize_m),
@@ -118,7 +148,7 @@ export function buildSolverConfigFromSettings(
     maximumBuyPrice_cents_per_kWh: settings.maximumBuyPrice_eur_per_kWh * 100,
     ...(settings.strategy === 'green' ? {
       greenSocTargets: buildGreenSocTargets({
-        load_W: extractWindow(data.load, nowMs, alignedEndMs, settings.stepSize_m),
+        load_W,
         pv_W: extractWindow(data.pv, nowMs, alignedEndMs, settings.stepSize_m),
         startMs: nowMs,
         stepSize_m: settings.stepSize_m,

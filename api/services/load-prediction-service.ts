@@ -270,7 +270,20 @@ export async function runForecast(config: PredictionRunConfig): Promise<Forecast
     time: t.time,
     value: fixed_W + perPredictorFuture.reduce((sum, predictions) => sum + (predictions[i].predicted ?? 0), 0),
   }));
-  const forecastSeries = buildForecastSeries(mappedPoints, startIso, endIso);
+  const negativePoints = mappedPoints.filter(point => Number.isFinite(point.value) && point.value < 0);
+  if (negativePoints.length > 0) {
+    console.warn('[predict] clamped negative load forecast values to zero', {
+      count: negativePoints.length,
+      minimum_W: Math.min(...negativePoints.map(point => point.value)),
+      firstAt: new Date(negativePoints[0].time).toISOString(),
+      lastAt: new Date(negativePoints[negativePoints.length - 1].time).toISOString(),
+    });
+  }
+  const forecastSeries = buildForecastSeries(
+    mappedPoints.map(point => ({ ...point, value: Number.isFinite(point.value) ? Math.max(0, point.value) : 0 })),
+    startIso,
+    endIso,
+  );
 
   const components = sensorPredictors.map((p, idx) => ({
     label: `${p.sensor} (${p.type})`,

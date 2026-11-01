@@ -33,6 +33,8 @@ function mergeDay(previous: DayActuals | undefined, incoming: DayActuals): DayAc
       merged.gridObservedMinutes = old.gridObservedMinutes;
       merged.missingImportPriceMinutes = old.missingImportPriceMinutes;
       merged.missingExportPriceMinutes = old.missingExportPriceMinutes;
+      merged.pricedImportMinutes = old.pricedImportMinutes;
+      merged.pricedExportMinutes = old.pricedExportMinutes;
       merged.ic = old.ic;
       merged.ec = old.ec;
     }
@@ -58,13 +60,18 @@ function mergeDay(previous: DayActuals | undefined, incoming: DayActuals): DayAc
   quality.missingPvMs = Math.max(0, quality.expectedMs - quality.pvObservedMs);
   quality.missingImportPriceMs = rows.reduce((sum, row) => sum + (Number(row.missingImportPriceMinutes) || 0) * 60_000, 0);
   quality.missingExportPriceMs = rows.reduce((sum, row) => sum + (Number(row.missingExportPriceMinutes) || 0) * 60_000, 0);
+  quality.pricedImportMs = rows.reduce((sum, row) => sum + (Number(row.pricedImportMinutes) || 0) * 60_000, 0);
+  quality.pricedExportMs = rows.reduce((sum, row) => sum + (Number(row.pricedExportMinutes) || 0) * 60_000, 0);
   const totals = rows.reduce((sum, row) => ({
     costs_cents: sum.costs_cents + (Number(row.importCost_cents) || 0),
     revenue_cents: sum.revenue_cents + (Number(row.exportCost_cents) || 0),
     batteryCosts_cents: sum.batteryCosts_cents + (Number(row.batteryWearCost_cents) || 0),
   }), { costs_cents: 0, revenue_cents: 0, batteryCosts_cents: 0 });
-  const costs = quality.gridObservedMs > 0 && quality.missingImportPriceMs === 0 ? totals.costs_cents : null;
-  const revenue = quality.gridObservedMs > 0 && quality.missingExportPriceMs === 0 ? totals.revenue_cents : null;
+  // A gap should mark the total as partial, not erase all known priced energy.
+  const costs = quality.gridObservedMs > 0
+    && (quality.missingImportPriceMs === 0 || quality.pricedImportMs > 0) ? totals.costs_cents : null;
+  const revenue = quality.gridObservedMs > 0
+    && (quality.missingExportPriceMs === 0 || quality.pricedExportMs > 0) ? totals.revenue_cents : null;
   const batteryCosts = quality.batteryObservedMs > 0 ? totals.batteryCosts_cents : null;
   return { ...incoming, rows, quality, totals: {
     costs_cents: costs, revenue_cents: revenue, batteryCosts_cents: batteryCosts,
