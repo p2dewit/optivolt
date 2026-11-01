@@ -1,8 +1,8 @@
 # OptiVolt 🔋
 
-## Changes in this fork — OptiVolt DESS 1.2
+## Changes in this fork — OptiVolt DESS 1.3
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.2** in the page header identifies this personal fork.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.3** in the page header identifies this personal fork.
 
 ## Optimizer tab overview
 
@@ -10,7 +10,7 @@ The **Optimizer** tab is the main overview for planning and operating the home b
 
 ![OptiVolt Optimizer tab overview with Strategy, Day Actuals, Optimized Plan, Settings, and charts](docs/images/optimizer-tab-overview.png)
 
-*Overview of the optimizer tab of Optivolt v1.2*
+*Overview of the optimizer tab of Optivolt v1.3*
 
 ### Strategy and power-flow plans
 
