@@ -134,9 +134,41 @@ describe('optimizer controller', () => {
     expect(services.drawPricesStepLines).toHaveBeenCalledWith(els.prices, rows, 30, null);
     expect(services.drawLoadPvGrouped).toHaveBeenCalledWith(els.loadpv, rows, 30);
     expect(services.updateEvPanel).toHaveBeenCalledWith(els, rows, summary, 30, tableArgs.evSettings);
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
     expect(els.run.disabled).toBe(false);
     expect(els.run.classList.contains('loading')).toBe(false);
+  });
+
+  it('finishes a local recompute without losing the last Victron push time', async () => {
+    const { controller, els, rows, services, summary } = setupController();
+    const lastPushAtMs = Date.now() - 10 * 60_000;
+    services.fetchLastPlan.mockResolvedValue({
+      computedAtMs: lastPushAtMs,
+      initialSoc_percent: 42,
+      inputsCurrent: true,
+      lastVictronPushAtMs: lastPushAtMs,
+      rows,
+      summary,
+      tsStart: '2026-05-01T12:00:00.000Z',
+    });
+    await controller.loadLastPlan();
+
+    services.requestRemoteSolve.mockResolvedValue({
+      computedAtMs: Date.now(),
+      initialSoc_percent: 42,
+      rebalanceWindow: { startIdx: 0, endIdx: 0 },
+      rows,
+      solverStatus: 'optimal',
+      summary,
+      tsStart: '2026-05-01T12:00:00.000Z',
+    });
+    els.pushToVictron.checked = false;
+    await controller.onRun();
+
+    expect(els.status.textContent).toContain('Plan calculated locally');
+    expect(els.status.textContent).toContain('not sent to Victron');
+    expect(els.status.textContent).toContain('last Victron push');
+    expect(els.status.textContent).not.toBe('Calculating…');
   });
 
   it('keeps a solved plan on screen when rendering throws', async () => {
@@ -174,7 +206,7 @@ describe('optimizer controller', () => {
 
     // getEvSettings returns null with EV off; the panel has to survive it.
     expect(services.updateEvPanel).toHaveBeenCalledWith(els, expect.anything(), expect.anything(), 30, null);
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
   });
 
   it('re-renders cached table rows when table display toggles change', async () => {
@@ -247,7 +279,7 @@ describe('optimizer controller', () => {
     expect(services.updateSummaryUI).toHaveBeenCalledWith(els, summary);
     expect(services.renderTable).toHaveBeenCalledTimes(1);
     expect(services.updateEvPanel).toHaveBeenCalledWith(els, rows, summary, 30, expect.anything());
-    expect(els.status.textContent).toBe('Loaded existing plan');
+    expect(els.status.textContent).toMatch(/^Loaded existing plan \(\d{2}:\d{2}\)$/);
   });
 
   it('reports no cached plan without touching the UI', async () => {
@@ -282,7 +314,7 @@ describe('optimizer controller', () => {
       summary: { netGridCost_cents: 1 },
     });
     await fresh;
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
     services.updateSummaryUI.mockClear();
     services.renderTable.mockClear();
 
@@ -296,7 +328,7 @@ describe('optimizer controller', () => {
 
     expect(services.updateSummaryUI).not.toHaveBeenCalled();
     expect(services.renderTable).not.toHaveBeenCalled();
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
     expect(els.run.disabled).toBe(false);
     expect(els.run.classList.contains('loading')).toBe(false);
   });
@@ -311,13 +343,13 @@ describe('optimizer controller', () => {
     const stale = controller.onRun();
     await controller.onRun();
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
 
     failStale(new Error('solver unavailable'));
     await stale;
 
     expect(services.updateSummaryUI).not.toHaveBeenCalledWith(els, null);
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
   });
 
   it('drops a cached plan that arrives after a newer solve', async () => {
@@ -329,7 +361,7 @@ describe('optimizer controller', () => {
 
     const cached = controller.loadLastPlan();
     await controller.onRun();
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
     services.updateSummaryUI.mockClear();
 
     releaseCached({
@@ -340,7 +372,7 @@ describe('optimizer controller', () => {
     await expect(cached).resolves.toBeNull();
 
     expect(services.updateSummaryUI).not.toHaveBeenCalled();
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
   });
 
   it('re-reads the cached forecasts when the server regenerated them', async () => {
@@ -390,6 +422,6 @@ describe('optimizer controller', () => {
     await controller.onRun();
 
     expect(services.updateSummaryUI).toHaveBeenCalledWith(els, expect.objectContaining({ netGridCost_cents: 12.5 }));
-    expect(els.status.textContent).toBe('Plan updated');
+    expect(els.status.textContent).toBe('Plan calculated locally · not sent to Victron');
   });
 });

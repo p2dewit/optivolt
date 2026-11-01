@@ -429,7 +429,8 @@ export function createOptimizerController({
   function updateRunStatus(solverStatus, writeToVictron, computedAtMs, lastVictronPushAtMs) {
     if (!els.status) return;
 
-    if (writeToVictron && Number.isFinite(lastVictronPushAtMs)) {
+    if (writeToVictron && Number.isFinite(lastVictronPushAtMs)
+      && (lastReportedPushAtMs === null || lastVictronPushAtMs > lastReportedPushAtMs)) {
       updateLatestPushStatus({ lastVictronPushAtMs });
       return;
     }
@@ -445,10 +446,15 @@ export function createOptimizerController({
       label = `Plan status: ${solverStatus}${formatPlanTime(computedAtMs)}`;
       colorClass = "text-amber-600 dark:text-amber-400";
     } else {
-      // A successful local recompute is not a new Victron push. Preserve the
-      // last confirmed push time when one is already known.
-      if (lastReportedPushAtMs !== null) return;
-      label = `Plan updated${formatPlanTime(computedAtMs)}`;
+      // A local recompute still needs a terminal status. Keep the latest
+      // confirmed push visible without leaving the status stuck on Calculating.
+      const lastPushAtMs = lastReportedPushAtMs ?? lastVictronPushAtMs;
+      const lastPushLabel = Number.isFinite(lastPushAtMs)
+        ? ` · last Victron push${formatPlanTime(lastPushAtMs)}`
+        : "";
+      label = writeToVictron
+        ? `Plan calculated; Victron push not confirmed${formatPlanTime(computedAtMs)}${lastPushLabel}`
+        : `Plan calculated locally${formatPlanTime(computedAtMs)} · not sent to Victron${lastPushLabel}`;
     }
     els.status.textContent = label;
     els.status.className = `text-sm font-medium ${colorClass}`;
