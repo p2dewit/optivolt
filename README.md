@@ -1,8 +1,12 @@
 # OptiVolt 🔋
 
-## Changes in this fork — OptiVolt DESS 1.4
+## Changes in this fork — OptiVolt DESS 2.0
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **1.4** in the page header identifies the current release.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **2.0** in the page header identifies the current release.
+
+## HiGHS 1.15.1 and parallel solving
+
+OptiVolt 2.0 upgrades the solver from HiGHS **1.8.0** to **1.15.1**. The production build is native and supports multi-threaded solving, configured to use four threads/CPUs. In a six-day Green-strategy benchmark of roughly 665 quarter-hour slots, solve time was about **5.1 seconds**, compared with about **22.4 seconds** on the previous single-threaded solver—approximately **4.5× faster**. Solve times vary with the input data and model.
 
 ## Optimizer tab overview
 
@@ -10,7 +14,7 @@ The **Optimizer** tab is the main overview for planning and operating the home b
 
 ![OptiVolt Optimizer tab overview with Strategy, Day Actuals, Optimized Plan, Settings, and charts](docs/images/optimizer-tab-overview.png)
 
-*Overview of the optimizer tab of Optivolt v1.4*
+*Overview of the optimizer tab of Optivolt v2.0*
 
 ### Strategy and power-flow plans
 
@@ -104,7 +108,7 @@ Plan and control a home energy system with forecasts, dynamic tariffs, and a day
 
 ## Features
 
-- Day-ahead cost minimization over 15-minute slots using HiGHS (WASM)
+- Day-ahead cost minimization over 15-minute slots using the native HiGHS solver
 - Built-in load forecasting based on Home Assistant historical sensor data
 - Server-side VRM integration for forecasts/prices and system limits
 - Optional Dynamic ESS schedule pushes over MQTT (first 4 slots)
