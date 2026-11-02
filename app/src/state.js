@@ -44,8 +44,11 @@ export function snapshotUI(els) {
     liveBlockGuardMode: els.liveBlockGuardMode?.value || "off",
     pushToVictronEnabled: !!els.pushToVictron?.checked,
     updateDataBeforeRun: !!els.updateDataBeforeRun?.checked,
-    minimumSellPrice_eur_per_kWh: num(els.minimumSellPrice?.value),
     maximumBuyPrice_eur_per_kWh: num(els.maximumBuyPrice?.value),
+    greenBuyPricePercentile_percent: num(els.greenBuyPricePercentile?.value),
+    greenSellPricePercentile_percent: num(els.greenSellPricePercentile?.value),
+    greenExportMargin_percent: num(els.greenExportMargin?.value),
+    greenGridImportPenalty_cents_per_kWh: num(els.greenGridImportPenalty?.value),
 
     // ALGORITHM
     rebalanceEnabled: !!els.rebalanceEnabled?.checked,
@@ -130,8 +133,11 @@ export function hydrateUI(els, obj = {}) {
   if (els.liveBlockGuardMode && obj.liveBlockGuardMode != null) els.liveBlockGuardMode.value = String(obj.liveBlockGuardMode);
   if (els.pushToVictron && obj.pushToVictronEnabled != null) els.pushToVictron.checked = !!obj.pushToVictronEnabled;
   if (els.updateDataBeforeRun && obj.updateDataBeforeRun != null) els.updateDataBeforeRun.checked = !!obj.updateDataBeforeRun;
-  setFixedIfDef(els.minimumSellPrice, obj.minimumSellPrice_eur_per_kWh, 5);
   setFixedIfDef(els.maximumBuyPrice, obj.maximumBuyPrice_eur_per_kWh, 5);
+  setIfDef(els.greenBuyPricePercentile, obj.greenBuyPricePercentile_percent);
+  setIfDef(els.greenSellPricePercentile, obj.greenSellPricePercentile_percent);
+  setIfDef(els.greenExportMargin, obj.greenExportMargin_percent);
+  setIfDef(els.greenGridImportPenalty, obj.greenGridImportPenalty_cents_per_kWh);
 
   // HOME ASSISTANT
   setIfDef(els.haUrl, obj.haUrl);
@@ -193,13 +199,25 @@ export function updatePlanMeta(els, tsStart, tsEnd) {
 }
 
 // Summary helper
+export function updatePlanStrategyUI(els, strategy = els.strategy?.value) {
+  if (!els.planStrategy) return;
+  const isGreen = strategy === "green";
+  const isCalculating = els.planStrategy.dataset.calculating === "true";
+  const label = isGreen ? "Green" : "Trade";
+  els.planStrategy.textContent = isCalculating ? `${label} calculating…` : label;
+  els.planStrategy.classList.toggle("financial-positive", isGreen);
+  els.planStrategy.classList.toggle("financial-negative", !isGreen);
+  els.planStrategy.setAttribute("aria-busy", String(isCalculating));
+}
+
+export function setPlanStrategyCalculating(els, calculating) {
+  if (!els.planStrategy) return;
+  els.planStrategy.dataset.calculating = String(Boolean(calculating));
+  updatePlanStrategyUI(els);
+}
+
 export function updatePlanCostsUI(els, rows, strategy) {
-  if (els.planStrategy) {
-    const isGreen = strategy === "green";
-    els.planStrategy.textContent = isGreen ? "Green" : "Trade";
-    els.planStrategy.classList.toggle("financial-positive", isGreen);
-    els.planStrategy.classList.toggle("financial-negative", !isGreen);
-  }
+  updatePlanStrategyUI(els, strategy);
   if (!Array.isArray(rows) || rows.length === 0) {
     setFinancialValue(els.importCost, null);
     setFinancialValue(els.exportRevenue, null);

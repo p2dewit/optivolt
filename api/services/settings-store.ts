@@ -20,7 +20,9 @@ const NUMERIC_FIELDS: (keyof Settings)[] = [
   'evTripSocBuffer_percent',
   'extendedHorizonDays', 'energyTax_eur_per_kWh', 'buyCost_eur_per_kWh',
   'sellCost_eur_per_kWh', 'vat_percent',
-  'minimumSellPrice_eur_per_kWh', 'maximumBuyPrice_eur_per_kWh',
+  'maximumBuyPrice_eur_per_kWh',
+  'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent',
+  'greenExportMargin_percent', 'greenGridImportPenalty_cents_per_kWh',
 ];
 
 // Strictly positive: zero step size, capacities, hold hours, or charge currents are unusable.
@@ -33,7 +35,9 @@ const POSITIVE_FIELDS: (keyof Settings)[] = [
 const NON_NEGATIVE_FIELDS: (keyof Settings)[] = [
   'maxChargePower_W', 'maxDischargePower_W', 'maxGridImport_W', 'maxGridExport_W',
   'batteryCost_cent_per_kWh', 'idleDrain_W',
-  'minimumSellPrice_eur_per_kWh', 'maximumBuyPrice_eur_per_kWh',
+  'maximumBuyPrice_eur_per_kWh',
+  'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent',
+  'greenExportMargin_percent', 'greenGridImportPenalty_cents_per_kWh',
 ];
 
 // Efficiencies divide LP cost coefficients: zero would produce infinite costs.
@@ -79,6 +83,12 @@ function validateSettings(s: Settings): Settings {
     if ((s[field] as number) < 0) {
       throw new SettingsValidationError(`Invalid setting: ${field} must be >= 0`);
     }
+  }
+  if (s.greenExportMargin_percent > 1000) {
+    throw new SettingsValidationError('Invalid setting: greenExportMargin_percent must be <= 1000');
+  }
+  for (const field of ['greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent'] as const) {
+    if (s[field] > 100) throw new SettingsValidationError(`Invalid setting: ${field} must be <= 100`);
   }
   for (const field of EFFICIENCY_FIELDS) {
     const value = s[field] as number;
@@ -189,6 +199,9 @@ function migrateSettings(raw: Partial<Settings>): Partial<Settings> {
   if (version > SETTINGS_SCHEMA_VERSION) {
     console.warn(`settings.json schemaVersion ${version} is newer than supported ${SETTINGS_SCHEMA_VERSION}; loading best-effort`);
   }
+  // The former absolute minimum sell price is no longer used: Green now uses
+  // a rolling sell percentile and the battery replacement-cost threshold.
+  delete (raw as Partial<Settings> & { minimumSellPrice_eur_per_kWh?: number }).minimumSellPrice_eur_per_kWh;
   return raw;
 }
 

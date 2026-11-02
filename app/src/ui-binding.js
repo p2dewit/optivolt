@@ -1,3 +1,5 @@
+import { setPlanStrategyCalculating, updatePlanStrategyUI } from "./state.js";
+
 const $ = (sel) => document.querySelector(sel);
 
 export function getElements() {
@@ -29,8 +31,11 @@ export function getElements() {
     strategy: $("#strategy-mode"),
     planStrategy: $("#plan-strategy-value"),
     planStrategyToggle: $("#plan-strategy-toggle"),
-    minimumSellPrice: $("#strategy-min-sell-price"),
     maximumBuyPrice: $("#strategy-max-buy-price"),
+    greenBuyPricePercentile: $("#strategy-buy-percentile"),
+    greenSellPricePercentile: $("#strategy-sell-percentile"),
+    greenExportMargin: $("#green-export-margin"),
+    greenGridImportPenalty: $("#green-grid-import-penalty"),
     rebalanceToggleLabel: $("#rebalance-toggle-label"),
     rebalanceEnabled: $("#rebalance-enabled"),
     rebalanceNudge: $("#rebalance-nudge"),
@@ -184,6 +189,11 @@ export function wireGlobalInputs(
     onInput, onSave = onInput, onRun, onTableDisplayChange = onRun, onGuardSettingsChange = () => {}, updateTerminalCustomUI,
   }
 ) {
+  const syncStrategyLabel = (calculating = false) => {
+    setPlanStrategyCalculating(els, calculating);
+    updatePlanStrategyUI(els);
+  };
+
   // Auto-save only settings-owned controls.
   for (const el of document.querySelectorAll("[data-settings-input]")) {
     if (el.dataset.optimizerQuickMirror) continue; // Mirrors dispatch changes through their source input
@@ -194,6 +204,10 @@ export function wireGlobalInputs(
       el.addEventListener("change", onGuardSettingsChange);
     }
   }
+
+  els.strategy?.addEventListener("input", () => syncStrategyLabel(true));
+  els.strategy?.addEventListener("change", () => syncStrategyLabel(true));
+  syncStrategyLabel();
 
   els.terminal?.addEventListener("change", updateTerminalCustomUI);
   updateTerminalCustomUI();

@@ -22,20 +22,28 @@ import {
 import { initDayActuals } from "./src/day-actuals.js";
 import { initVictronModeIndicator } from "./src/victron-mode.js";
 
-const accuracyTooltip = mountForecastAccuracyTooltip(document.getElementById("forecast-accuracy"));
+const accuracyTooltip = mountForecastAccuracyTooltip([
+  document.getElementById("forecast-accuracy"),
+  document.getElementById("forecast-accuracy-2da"),
+]);
 
 // ---------- Helpers ----------
 async function refreshForecastAccuracy() {
-  const element = document.getElementById("forecast-accuracy");
-  if (!element) return;
+  const dayAheadElement = document.getElementById("forecast-accuracy");
+  const twoDayAheadElement = document.getElementById("forecast-accuracy-2da");
+  if (!dayAheadElement || !twoDayAheadElement) return;
   try {
     const result = await fetchForecastAccuracy();
-    const value = element.querySelector(".forecast-accuracy-value");
-    if (value) value.textContent = Number.isFinite(result.scorePercent)
-      ? Math.round(result.scorePercent) + "%"
-      : "—";
+    const updateBadge = (element, score) => {
+      const value = element.querySelector(".forecast-accuracy-value");
+      if (value) value.textContent = Number.isFinite(score?.scorePercent)
+        ? Math.round(score.scorePercent) + "%"
+        : "—";
+      element.dataset.days = String(score?.days || 0);
+    };
+    updateBadge(dayAheadElement, result);
+    updateBadge(twoDayAheadElement, result.twoDayAhead);
     accuracyTooltip.update(result);
-    element.dataset.days = String(result.days || 0);
   } catch (error) {
     console.warn("Could not load forecast accuracy:", error);
   }

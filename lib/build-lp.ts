@@ -13,6 +13,10 @@ export function buildLP({
   minimumSellPrice_cents_per_kWh = 30,
   maximumBuyPrice_cents_per_kWh = 15,
   greenSocTargets = [],
+  greenBuyPriceThresholds_cents_per_kWh = [],
+  greenSellPriceThresholds_cents_per_kWh = [],
+  greenExportMargin_percent = 25,
+  greenGridImportPenalty_cents_per_kWh = 1000,
 
   // static parameters
   stepSize_m = 15,
@@ -63,10 +67,10 @@ export function buildLP({
     evOnPerSlot: 1e-6,           // escalating per-slot penalty on ev_on_t: breaks symmetry between equivalent charging schedules
     rebalanceStartPerSlot: 1e-6, // escalating per-window penalty on start_balance_k: breaks symmetry between equivalent rebalance windows
   }
-  const greenSocTargetPenalty_cents_per_Wh = 0.5;
   const maxAbsMarketPrice_cents_per_kWh = Math.max(0, ...importPrice.map(price => Math.abs(price)), ...exportPrice.map(price => Math.abs(price)));
-  const greenGridImportPenalty_cents_per_kWh = strategy === 'green'
-    ? Math.max(1000, maxAbsMarketPrice_cents_per_kWh) + batteryCost_cent_per_kWh
+  const greenImportPenalty = strategy === 'green' ? greenGridImportPenalty_cents_per_kWh : 0;
+  const greenSocTargetPenalty_cents_per_Wh = strategy === 'green'
+    ? (greenImportPenalty + 2 * maxAbsMarketPrice_cents_per_kWh + batteryCost_cent_per_kWh + 1) / 1000
     : 0;
   // Keep Green's self-sufficiency priority from pushing SoC below the configured
   // minimum when importing to serve load is still feasible.
@@ -77,6 +81,27 @@ export function buildLP({
     ? greenSocTargets.filter(target => Number.isInteger(target.slot) && target.slot >= 0 && target.slot < T && Number.isFinite(target.soc_Wh))
     : [];
   const greenSocShortfall = (index: number) => `green_soc_shortfall_${index}`;
+  const greenTargetIndexBySlot = new Map<number, number>(
+    activeGreenSocTargets.map((target, index): [number, number] => [target.slot, index]),
+  );
+  const greenChargeMode = lpVar.greenChargeMode.name;
+  const greenExportAllowed = lpVar.greenExportAllowed.name;
+  const greenBuyThresholdAt = (slot: number) => greenBuyPriceThresholds_cents_per_kWh[slot] ?? maximumBuyPrice_cents_per_kWh;
+  const greenSellThresholdAt = (slot: number) => greenSellPriceThresholds_cents_per_kWh[slot] ?? minimumSellPrice_cents_per_kWh;
+  const nextAffordableSlot = (slot: number): number => {
+    for (let candidate = slot + 1; candidate < T; candidate++) {
+      if (importPrice[candidate] <= greenBuyThresholdAt(candidate)) return candidate;
+    }
+    return -1;
+  };
+  const greenExportPriceFloor = (slot: number): number => {
+    const replacementSlot = nextAffordableSlot(slot);
+    if (replacementSlot < 0) return Infinity;
+    const roundTripEfficiency = (chargeEfficiency_percent / 100) * (dischargeEfficiency_percent / 100);
+    const replacementCost = importPrice[replacementSlot] / roundTripEfficiency
+      + batteryCost_cent_per_kWh * (0.5 + 0.5 / roundTripEfficiency);
+    return Math.max(0, greenSellThresholdAt(slot), replacementCost * (1 + Math.max(0, greenExportMargin_percent) / 100));
+  };
 
   // Unit helpers
   const stepHours = stepSize_m / 60; // hours per slot
@@ -94,6 +119,10 @@ export function buildLP({
   const minSoc_Wh = (minSoc_percent / 100) * batteryCapacity_Wh;
   const maxSoc_Wh = (maxSoc_percent / 100) * batteryCapacity_Wh;
   const initialSoc_Wh = (initialSoc_percent / 100) * batteryCapacity_Wh;
+  // A conservative finite big-M for the reserve/export gate, accounting for
+  // every slot's maximum possible battery discharge and idle drain.
+  const greenReserveBigM_Wh = maxSoc_Wh
+    + T * (maxDischargePower_W * stepHours / (dischargeEfficiency_percent / 100) + idleDrain_Wh);
 
   // Rebalancing MILP: number of slots remaining in the hold window.
   // Truncate to integer to guard against fractional values from future callers.
@@ -150,6 +179,35 @@ export function buildLP({
   for (const w of evWindows) {
     if (w.resetSoc_Wh == null && w.drop_Wh != null && w.startSlot > 0) evDropAt.set(w.startSlot, w.drop_Wh);
   }
+
+  // Add Green binaries only in slots where both sides of the corresponding
+  // decision can actually be active. Most slots cannot export at the Green
+  // price floor, and many cannot charge from either PV or the grid. Omitting
+  // those fixed-zero binaries is an exact reduction of the same model.
+  const greenGridBatteryUpperBound = (slot: number) => {
+    if (strategy !== 'green' || importPrice[slot] > greenBuyThresholdAt(slot)) return 0;
+    return Math.min(maxGridImport_W, maxChargePower_W);
+  };
+  const greenPvBatteryUpperBound = (slot: number) => Math.min(Math.max(0, pv_W[slot]), maxChargePower_W);
+  const greenBatteryExportUpperBound = (slot: number) => {
+    if (strategy !== 'green' || exportPrice[slot] < greenExportPriceFloor(slot)) return 0;
+    return Math.min(maxDischargePower_W, maxGridExport_W);
+  };
+  const greenChargeModeSlots = new Set<number>();
+  const greenExportAllowedSlots = new Set<number>();
+  if (strategy === 'green') {
+    for (let t = 0; t < T; t++) {
+      const canCharge = greenGridBatteryUpperBound(t) > 0 || greenPvBatteryUpperBound(t) > 0;
+      const canDischarge = Math.min(maxDischargePower_W, Math.max(0, load_W[t])) > 0
+        || greenBatteryExportUpperBound(t) > 0
+        || (evActive && evAvailable[t] && Math.min(maxDischargePower_W, evMaxPow_W) > 0);
+      if (canCharge && canDischarge) greenChargeModeSlots.add(t);
+
+      if (greenTargetIndexBySlot.has(t) && greenBatteryExportUpperBound(t) > 0) {
+        greenExportAllowedSlots.add(t);
+      }
+    }
+  }
   // SoC deadlines, clamped to in-horizon slots and to battery capacity.
   const evTargets = (ev?.targets ?? [])
     .filter((tg) => tg.slot >= 0 && tg.slot < T)
@@ -204,7 +262,7 @@ export function buildLP({
     const exportCoeff_cents = exportPrice[t] * priceCoeff; // c€
 
     // Aggregate coefficients for each variable
-    const greenImportPriority = strategy === 'green' ? greenGridImportPenalty_cents_per_kWh * priceCoeff : 0;
+    const greenImportPriority = greenImportPenalty * priceCoeff;
     const gridToLoadCoeff = importCoeff_cents + greenImportPriority; // import cost plus Green self-sufficiency priority
     const gridToBatteryCoeff = importCoeff_cents + batteryCost_cents; // import cost + battery cost
     const greenSolarPriority = strategy === 'green'
@@ -298,6 +356,11 @@ export function buildLP({
     lines.push(` c_charge_cap_${t}: ${gridToBattery(t)} + ${pvToBattery(t)} <= ${maxChargePower_W}`);
     const batEvTerm = evActive ? ` + ${batteryToEv(t)}` : '';
     lines.push(` c_discharge_cap_${t}: ${batteryToLoad(t)} + ${batteryToGrid(t)}${batEvTerm} <= ${maxDischargePower_W}`);
+    if (greenChargeModeSlots.has(t)) {
+      // One binary mode per slot prevents battery charging and discharging at once.
+      lines.push(` c_green_charge_mode_${t}: ${gridToBattery(t)} + ${pvToBattery(t)} - ${toNum(maxChargePower_W)} ${greenChargeMode(t)} <= 0`);
+      lines.push(` c_green_discharge_mode_${t}: ${batteryToLoad(t)} + ${batteryToGrid(t)}${batEvTerm} + ${toNum(maxDischargePower_W)} ${greenChargeMode(t)} <= ${maxDischargePower_W}`);
+    }
 
     // Grid import/export limits
     const gridEvTerm = evActive ? ` + ${gridToEv(t)}` : '';
@@ -310,6 +373,13 @@ export function buildLP({
   for (let i = 0; i < activeGreenSocTargets.length; i++) {
     const target = activeGreenSocTargets[i];
     lines.push(` c_green_soc_target_${i}: ${soc(target.slot)} + ${greenSocShortfall(i)} >= ${toNum(target.soc_Wh)}`);
+  }
+  for (const t of greenExportAllowedSlots) {
+    const targetIndex = greenTargetIndexBySlot.get(t)!;
+    const targetShortfall = greenSocShortfall(targetIndex);
+    // Exact soft-reserve gate, retained only in price slots where export is possible.
+    lines.push(` c_green_export_reserve_${t}: ${targetShortfall} + ${toNum(greenReserveBigM_Wh)} ${greenExportAllowed(t)} <= ${toNum(greenReserveBigM_Wh)}`);
+    lines.push(` c_green_export_gate_${t}: ${batteryToGrid(t)} - ${toNum(greenBatteryExportUpperBound(t))} ${greenExportAllowed(t)} <= 0`);
   }
 
   // MILP rebalancing: force a contiguous window of D slots to hold the battery at target SoC
@@ -412,8 +482,8 @@ export function buildLP({
     // Grid → load/battery (cannot exceed import limit; load cap for the load branch)
     lines.push(` 0 <= ${gridToLoad(t)} <= ${toNum(Math.min(maxGridImport_W, load_W[t]))}`);
     const maxGridBatteryPower = Math.min(maxGridImport_W, maxChargePower_W);
-    const gridBatteryLimit = strategy === 'green' && importPrice[t] > maximumBuyPrice_cents_per_kWh
-      ? 0
+    const gridBatteryLimit = strategy === 'green'
+      ? greenGridBatteryUpperBound(t)
       : maxGridBatteryPower;
     lines.push(` 0 <= ${gridToBattery(t)} <= ${toNum(gridBatteryLimit)}`);
 
@@ -425,8 +495,8 @@ export function buildLP({
     // Battery → load/grid (cannot exceed discharge or respective sinks)
     lines.push(` 0 <= ${batteryToLoad(t)} <= ${toNum(Math.min(maxDischargePower_W, load_W[t]))}`);
     const maxBatteryExportPower = Math.min(maxDischargePower_W, maxGridExport_W);
-    const batteryExportLimit = strategy === 'green' && exportPrice[t] < minimumSellPrice_cents_per_kWh
-      ? 0
+    const batteryExportLimit = strategy === 'green'
+      ? greenBatteryExportUpperBound(t)
       : maxBatteryExportPower;
     lines.push(` 0 <= ${batteryToGrid(t)} <= ${toNum(batteryExportLimit)}`);
 
@@ -443,10 +513,11 @@ export function buildLP({
   }
   for (let i = 0; i < activeGreenSocTargets.length; i++) {
     lines.push(` ${greenSocShortfall(i)} >= 0`);
+    lines.push(` ${greenSocShortfall(i)} <= ${toNum(greenReserveBigM_Wh)}`);
   }
   lines.push("");
 
-  if (D > 0 || evActive) {
+  if (D > 0 || evActive || greenChargeModeSlots.size > 0 || greenExportAllowedSlots.size > 0) {
     lines.push("Binaries");
     if (D > 0) {
       for (let k = 0; k <= KMAX; k++) {
@@ -457,6 +528,12 @@ export function buildLP({
       for (let t = 0; t < T; t++) {
         lines.push(` ${evOn(t)}`);
       }
+    }
+    for (const t of greenChargeModeSlots) {
+      lines.push(` ${greenChargeMode(t)}`);
+    }
+    for (const t of greenExportAllowedSlots) {
+      lines.push(` ${greenExportAllowed(t)}`);
     }
     lines.push("");
   }

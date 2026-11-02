@@ -34,6 +34,45 @@ describe('buildLP', () => {
     expect(lp).toContain('soc_shortfall_0');
   });
 
+  it('prunes Green binaries and export gates when those flows are impossible', () => {
+    const lp = buildLP({ ...mockData, strategy: 'green' });
+    expect(lp).toContain('c_green_charge_mode_0: grid_to_battery_0 + pv_to_battery_0 - 3600 green_charge_mode_0 <= 0');
+    expect(lp).not.toContain('green_export_allowed_0');
+    expect(lp).not.toContain('c_green_export_gate_0:');
+    expect(lp.match(/^ green_charge_mode_\d+$/gm)).toHaveLength(T);
+  });
+
+  it('keeps an exact Green export-reserve gate only when export can occur', () => {
+    const lp = buildLP({
+      ...mockData,
+      strategy: 'green',
+      exportPrice: Array(T).fill(100),
+      greenBuyPriceThresholds_cents_per_kWh: Array(T).fill(15),
+      greenSellPriceThresholds_cents_per_kWh: Array(T).fill(0),
+      greenSocTargets: [{ slot: 0, soc_Wh: 1000 }],
+    });
+    expect(lp).toContain('c_green_export_reserve_0: green_soc_shortfall_0 +');
+    expect(lp).toContain('c_green_export_gate_0: battery_to_grid_0 - 4000 green_export_allowed_0 <= 0');
+    expect(lp).toContain(' green_export_allowed_0');
+    expect(lp).not.toContain('green_export_allowed_1');
+  });
+
+  it('omits all Green binaries when charge, discharge, and export are impossible', () => {
+    const lp = buildLP({
+      ...mockData,
+      load_W: Array(T).fill(0),
+      pv_W: Array(T).fill(0),
+      importPrice: Array(T).fill(100),
+      exportPrice: Array(T).fill(0),
+      strategy: 'green',
+      greenBuyPriceThresholds_cents_per_kWh: Array(T).fill(15),
+      greenSellPriceThresholds_cents_per_kWh: Array(T).fill(0),
+    });
+    expect(lp).not.toContain('Binaries');
+    expect(lp).not.toContain('green_charge_mode_');
+    expect(lp).not.toContain('green_export_allowed_');
+  });
+
   it('handles custom step size', () => {
     // Just checking it doesn't crash; logic verification would require parsing the coefficients
     const lp = buildLP({ ...mockData, stepSize_m: 60 });

@@ -1,7 +1,7 @@
 import { HttpError } from '../http-errors.ts';
 import { extractWindow, extendSeriesWithForecast, getForecastTimeRange, getQuarterStart } from '../../lib/time-series-utils.ts';
 import { buildEvConfig } from './ev-config-builder.ts';
-import { buildGreenSocTargets } from './green-strategy.ts';
+import { buildGreenPriceThresholds, buildGreenSocTargets } from './green-strategy.ts';
 import type { SolverConfig, TimeSeries } from '../../lib/types.ts';
 import type { Settings, Data } from '../types.ts';
 
@@ -130,12 +130,25 @@ export function buildSolverConfigFromSettings(
     });
   }
   const load_W = rawLoad_W.map(value => Math.max(0, value));
+  const pvWindow_W = extractWindow(data.pv, nowMs, alignedEndMs, settings.stepSize_m);
+  const importPriceWindow = extractWindow(importPrice, nowMs, alignedEndMs, settings.stepSize_m);
+  const exportPriceWindow = extractWindow(exportPrice, nowMs, alignedEndMs, settings.stepSize_m);
+  const greenPriceThresholds = settings.strategy === 'green'
+    ? buildGreenPriceThresholds({
+      importPrice_cents_per_kWh: importPriceWindow,
+      exportPrice_cents_per_kWh: exportPriceWindow,
+      stepSize_m: settings.stepSize_m,
+      buyPercentile_percent: settings.greenBuyPricePercentile_percent,
+      sellPercentile_percent: settings.greenSellPricePercentile_percent,
+      maximumBuySafetyCap_cents_per_kWh: settings.maximumBuyPrice_eur_per_kWh * 100,
+    })
+    : undefined;
 
   const base: SolverConfig = {
     load_W,
-    pv_W:        extractWindow(data.pv,     nowMs, alignedEndMs, settings.stepSize_m),
-    importPrice: extractWindow(importPrice, nowMs, alignedEndMs, settings.stepSize_m),
-    exportPrice: extractWindow(exportPrice, nowMs, alignedEndMs, settings.stepSize_m),
+    pv_W:        pvWindow_W,
+    importPrice: importPriceWindow,
+    exportPrice: exportPriceWindow,
 
     stepSize_m:                           settings.stepSize_m,
     batteryCapacity_Wh:                   settings.batteryCapacity_Wh,
@@ -148,20 +161,27 @@ export function buildSolverConfigFromSettings(
     chargeEfficiency_percent:             settings.chargeEfficiency_percent,
     dischargeEfficiency_percent:          settings.dischargeEfficiency_percent,
     strategy: settings.strategy,
-    minimumSellPrice_cents_per_kWh: settings.minimumSellPrice_eur_per_kWh * 100,
     maximumBuyPrice_cents_per_kWh: settings.maximumBuyPrice_eur_per_kWh * 100,
     ...(settings.strategy === 'green' ? {
+      greenBuyPriceThresholds_cents_per_kWh: greenPriceThresholds!.buy_cents_per_kWh,
+      greenSellPriceThresholds_cents_per_kWh: greenPriceThresholds!.sell_cents_per_kWh,
       greenSocTargets: buildGreenSocTargets({
         load_W,
-        pv_W: extractWindow(data.pv, nowMs, alignedEndMs, settings.stepSize_m),
+        pv_W: pvWindow_W,
+        importPrice_cents_per_kWh: importPriceWindow,
+        buyPriceThreshold_cents_per_kWh: greenPriceThresholds!.buy_cents_per_kWh,
         startMs: nowMs,
         stepSize_m: settings.stepSize_m,
         batteryCapacity_Wh: settings.batteryCapacity_Wh,
         minSoc_percent: settings.minSoc_percent,
         maxSoc_percent: settings.maxSoc_percent,
         dischargeEfficiency_percent: settings.dischargeEfficiency_percent,
+        chargeEfficiency_percent: settings.chargeEfficiency_percent,
+        maxChargePower_W: settings.maxChargePower_W,
         idleDrain_W: settings.idleDrain_W,
       }),
+      greenExportMargin_percent: settings.greenExportMargin_percent,
+      greenGridImportPenalty_cents_per_kWh: settings.greenGridImportPenalty_cents_per_kWh,
     } : {}),
     batteryCost_cent_per_kWh:             settings.batteryCost_cent_per_kWh,
     idleDrain_W:                          settings.idleDrain_W,

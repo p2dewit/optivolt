@@ -1,8 +1,8 @@
 # OptiVolt 🔋
 
-## Changes in this fork — OptiVolt DESS 1.3
+## Changes in this fork — OptiVolt DESS 1.4
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe the local source code, including changes made on 26 October 2026. The original functionality and installation instructions appear below. Version **1.3** in the page header identifies this personal fork.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **1.4** in the page header identifies the current release.
 
 ## Optimizer tab overview
 
@@ -10,7 +10,7 @@ The **Optimizer** tab is the main overview for planning and operating the home b
 
 ![OptiVolt Optimizer tab overview with Strategy, Day Actuals, Optimized Plan, Settings, and charts](docs/images/optimizer-tab-overview.png)
 
-*Overview of the optimizer tab of Optivolt v1.3*
+*Overview of the optimizer tab of Optivolt v1.4*
 
 ### Strategy and power-flow plans
 
@@ -22,7 +22,7 @@ The **Optimizer** tab is the main overview for planning and operating the home b
 
 The Settings panel contains optimizer inputs and quick settings, recompute options, and the Victron schedule-push control. The adjacent status area reports the last run, current plan summary, battery state of charge, load and solar outlook, and related diagnostics. Mode and Correct plan indicators show the detected Victron mode and whether the current plan is complete and syntactically valid for Victron. The Live block guard status is shown with its operating mode.
 
-Battery SoC, Energy Prices (including the DA reliability · 30d indicator), and Predicted Load and Solar charts help explain the result. The Schedule Table provides the slot-by-slot plan, with display options for DESS details and energy values.
+Battery SoC, Energy Prices (including DA and 2DA reliability indicators), and Predicted Load and Solar charts help explain the result. The Schedule Table provides the slot-by-slot plan, with display options for DESS details and energy values.
 
 ![Optimizer Schedule Table showing per-slot forecasts, energy flows, prices, costs, and SoC](docs/images/optimizer-schedule-table.png)
 
@@ -34,8 +34,8 @@ Battery SoC, Energy Prices (including the DA reliability · 30d indicator), and 
 - **All-in tariffs:** Energy tax, import surcharge, selling costs, VAT, and a net-metering option are applied centrally to HA/API prices and price forecasts. The base price series are retained so that tariff changes can be reapplied without double counting. Tariff settings use €/kWh; price series use cents/kWh.
 - **Import:** `(base price + import surcharge + energy tax) × VAT factor`. **Export:** `(base price − selling costs + any energy tax under net metering) × VAT factor`, with amounts converted to the same unit. This is the implemented calculation; enter values that match your own contract.
 - **New API prices refresh the plan:** saving the settings triggers a new calculation. This automatic recalculation does not write a plan to Victron.
-- **Forecasts from HTTP(S) or a local `file:` source:** the configured forecast feed can extend the horizon beyond known prices. Actual prices remain authoritative. The extended horizon itself was already present upstream.
-- **Aggressive and Green:** Aggressive retains the economic optimization. Green gives additional priority to self-consumption and storing solar energy, limits grid charging above the configured maximum purchase price, and limits battery exports below the minimum selling price. Soft reserve-SoC targets around forecast solar production help bridge the night and morning; they are not unconditional guarantees.
+- **Forecasts from HTTP(S) or a local `file:` source:** the configured forecast feed can extend the horizon beyond known prices. Actual prices remain authoritative. `scripts/fetch_epexprediction.py` can fetch the EPEX forecast directly from EpexPredictor and atomically refresh the local forecast file for an external scheduler.
+- **Trade and Green:** Trade retains the economic optimization. Green derives rolling buy and sell thresholds from the next 24 hours of all-in prices. Grid charging uses the configured buy percentile, capped by the maximum buy safety price. Battery exports must meet the sell percentile and the replacement-energy cost plus the configured profit margin. Green also reserves battery SoC for forecast household demand until the next affordable charging slot, with a configurable grid-import penalty to favor PV and stored energy. Long Green horizons use fewer unnecessary binary decisions and a solver-proven 2% gap to keep calculations within the time limit.
 - **Net returns in the energy chart:** an optional cumulative line showing export revenue minus import costs and calculated battery wear, with euro amounts in the tooltip. This is a planning result, not measured or billed revenue.
 
 ### Live block guard for charging and discharging
@@ -67,9 +67,9 @@ When **Push to Victron** is turned off, the disabled state is saved first. OptiV
 
 Direct MQTT topics start with `W/<portal-ID>/…` for writes, `R/<portal-ID>/…` for reads, and `N/<portal-ID>/…` for responses. The mode topic is `settings/0/Settings/DynamicEss/Mode`, for example with `{"value":4}`. An additional `victron/` prefix should be used only with a bridge configured for it. Mode 4 is **Dynamic ESS**, not the general ESS External control setting.
 
-### DA reliability: forecast error tracking
+### Day-ahead and two-day-ahead reliability: forecast error tracking
 
-`GET /forecast-accuracy` and the **DA reliability · 30d** field show a score based on the latest 30 fully recorded delivery days, at most. These are not necessarily 30 consecutive calendar days. Only days with complete, matching quarter-hour slots are included; daylight saving time is taken into account.
+`GET /forecast-accuracy` and the **DA reliability · 30d** and **2DA reliability · 30d** fields show scores based on up to the latest 30 fully recorded delivery days. These are not necessarily 30 consecutive calendar days. Only days with complete, matching quarter-hour slots are included; daylight saving time is taken into account. DA compares the stored day-ahead forecast with actual import prices. 2DA preserves the forecast vintage available two calendar days before delivery and compares it with the same actuals.
 
 The forecast stored before the complete actual prices arrived is compared with the import prices:
 

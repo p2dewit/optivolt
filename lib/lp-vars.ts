@@ -43,6 +43,8 @@ export const lpVar = {
   evOn:          makeFamily('ev_on'),
   evSoc:         makeFamily('ev_soc'),
   startBalance:  makeFamily('start_balance'),
+  greenChargeMode: makeFamily('green_charge_mode'),
+  greenExportAllowed: makeFamily('green_export_allowed'),
 } as const;
 
 export interface RebalanceWindow {

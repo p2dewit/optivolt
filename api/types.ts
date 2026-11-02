@@ -75,8 +75,11 @@ export interface Settings {
   chartViewRange: 'standard' | 'full' | null;
   chartFlowsResolution: 'auto' | '15' | '60' | null;
   chartShowNetRevenue: boolean | null;
-  minimumSellPrice_eur_per_kWh: number;
   maximumBuyPrice_eur_per_kWh: number;
+  greenBuyPricePercentile_percent: number;
+  greenSellPricePercentile_percent: number;
+  greenExportMargin_percent: number;
+  greenGridImportPenalty_cents_per_kWh: number;
 }
 
 // ----------------------------- Persisted data ---------------------------

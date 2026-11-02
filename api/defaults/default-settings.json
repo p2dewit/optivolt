@@ -51,6 +51,9 @@
   "chartViewRange": null,
   "chartFlowsResolution": null,
   "chartShowNetRevenue": null,
-  "minimumSellPrice_eur_per_kWh": 0.30,
-  "maximumBuyPrice_eur_per_kWh": 0.15
+  "maximumBuyPrice_eur_per_kWh": 0.15,
+  "greenBuyPricePercentile_percent": 25,
+  "greenSellPricePercentile_percent": 75,
+  "greenExportMargin_percent": 25,
+  "greenGridImportPenalty_cents_per_kWh": 1000
 }

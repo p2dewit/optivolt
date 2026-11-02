@@ -16,6 +16,7 @@ import {
   updateRebalanceNudgeUI,
   updateSummaryUI,
   updatePlanCostsUI,
+  setPlanStrategyCalculating,
 } from "./state.js";
 import { resolvePlanView, storeViewRange, storeFlowsResolution } from "./plan-view.js";
 import {
@@ -250,6 +251,7 @@ export function createOptimizerController({
     }
 
     const seq = beginPlanRequest();
+    setPlanStrategyCalculating(els, els.strategy?.value === "green");
 
     if (els.status) {
       els.status.textContent = "Calculating…";
@@ -293,7 +295,13 @@ export function createOptimizerController({
       // A throw while drawing it is a display failure, not a planning failure, so it must not
       // fall through to the outer catch and wipe a summary that computed fine.
       try {
-        updateRunStatus(solverStatus, writeToVictron, result?.computedAtMs, result?.lastVictronPushAtMs);
+        updateRunStatus(
+          solverStatus,
+          writeToVictron,
+          result?.computedAtMs,
+          result?.lastVictronPushAtMs,
+          result?.victronPushSkippedReason,
+        );
         setPlan(result);
       } catch (renderError) {
         console.error("Failed to render plan", renderError);
@@ -314,9 +322,12 @@ export function createOptimizerController({
     } finally {
       // A superseded run leaves the button alone: the run that replaced it is
       // still in flight and owns the spinner.
-      if (runBtn && isCurrentPlanRequest(seq)) {
-        runBtn.classList.remove('loading');
-        runBtn.disabled = false;
+      if (isCurrentPlanRequest(seq)) {
+        setPlanStrategyCalculating(els, false);
+        if (runBtn) {
+          runBtn.classList.remove('loading');
+          runBtn.disabled = false;
+        }
       }
     }
   }
@@ -426,8 +437,14 @@ export function createOptimizerController({
     }
   }
 
-  function updateRunStatus(solverStatus, writeToVictron, computedAtMs, lastVictronPushAtMs) {
+  function updateRunStatus(solverStatus, writeToVictron, computedAtMs, lastVictronPushAtMs, victronPushSkippedReason) {
     if (!els.status) return;
+
+    if (victronPushSkippedReason && String(solverStatus).toLowerCase() === "optimal") {
+      els.status.textContent = `Plan calculated locally${formatPlanTime(computedAtMs)} · not sent to Victron (${victronPushSkippedReason})`;
+      els.status.className = "text-sm font-medium text-emerald-600 dark:text-emerald-400";
+      return;
+    }
 
     if (writeToVictron && Number.isFinite(lastVictronPushAtMs)
       && (lastReportedPushAtMs === null || lastVictronPushAtMs > lastReportedPushAtMs)) {

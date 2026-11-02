@@ -28,11 +28,10 @@ let pushedPlanComputedAtMs: number | null = null;
 // solve well under a second; this only kicks in when something degenerates
 // (or once longer horizons multiply the binary count).
 const SOLVE_TIME_LIMIT_S = 30;
-// MIP gap tuning. The EV × rebalance combination on a multi-day horizon is
-// the one slow case (4-day benchmark: 18.5 s at 0.5% gap vs 7.5 s at 2% on an
-// M-series Mac — slower add-on hardware could hit the time limit, and a
-// timed-out solve blocks hardware writes entirely). Loosen the gap for that
-// combination only; everything else keeps the tight default.
+// MIP gap tuning. Large Green horizons and the EV × rebalance combination
+// create many binary choices, so accept a proven 2% optimality gap for those
+// cases to avoid routinely hitting the hard time limit. Hardware writes still
+// require HiGHS to report Optimal; the gap is part of that solver proof.
 const MIP_REL_GAP = 0.005;
 const MIP_REL_GAP_LARGE = 0.02;
 const LARGE_MILP_SLOTS = 200;
@@ -55,6 +54,8 @@ export interface ComputePlanResult {
   inputsChangedDuringSolve: boolean;
   /** Extended horizon: prices past this instant are forecast, not actuals. */
   pricesKnownUntilMs: number | null;
+  /** Non-fatal reason a requested Victron write was skipped because pushing is disabled. */
+  victronPushSkippedReason?: string;
   timing: { startMs: number; stepMin: number };
   result: HighsSolution;
   rows: PlanRowWithDess[];
@@ -106,10 +107,12 @@ function attachOriginalPredictionValues(rows: PlanRow[], data: Data): PlanRow[] 
 export function selectSolveOptions(cfg: SolverConfig): { mip_rel_gap?: number; mip_abs_gap?: number; time_limit: number } {
   const hasEv = cfg.ev != null;
   const hasRebalance = (cfg.rebalance?.remainingSlots ?? 0) > 0;
-  if (!hasEv && !hasRebalance) return { time_limit: SOLVE_TIME_LIMIT_S };
+  const largeGreen = cfg.strategy === 'green' && cfg.load_W.length > LARGE_MILP_SLOTS;
+  if (!hasEv && !hasRebalance && !largeGreen) return { time_limit: SOLVE_TIME_LIMIT_S };
   const largeMilpCombo = hasEv && hasRebalance && cfg.load_W.length > LARGE_MILP_SLOTS;
+  const relaxedGap = largeGreen || largeMilpCombo;
   return {
-    mip_rel_gap: largeMilpCombo ? MIP_REL_GAP_LARGE : MIP_REL_GAP,
+    mip_rel_gap: relaxedGap ? MIP_REL_GAP_LARGE : MIP_REL_GAP,
     mip_abs_gap: 0.01,
     time_limit: SOLVE_TIME_LIMIT_S,
   };
@@ -352,6 +355,14 @@ export async function planAndMaybeWrite({
 } = {}): Promise<ComputePlanResult> {
   const plan = await computePlan({ updateData });
   if (writeToVictron) {
+    if (!(await loadSettings()).pushToVictronEnabled) {
+      plan.victronPushSkippedReason = 'Push to Victron is disabled';
+      console.info('[calculate] Victron push skipped', {
+        timestamp: new Date().toISOString(),
+        reason: plan.victronPushSkippedReason,
+      });
+      return plan;
+    }
     // Never push a non-Optimal solve to the hardware: a feasible-but-unproven
     // incumbent (e.g. "Time limit reached") is fine to display but not to write.
     if (plan.result.Status !== 'Optimal') {
@@ -362,7 +373,22 @@ export async function planAndMaybeWrite({
     if (plan.inputsChangedDuringSolve) {
       throw new Error('Refusing to write schedule to Victron: solver inputs changed during the solve; recompute first');
     }
-    await writePlanToVictron(plan.rows, plan.timing.stepMin);
+    try {
+      await writePlanToVictron(plan.rows, plan.timing.stepMin);
+    } catch (error) {
+      // The switch can be turned off while the optimizer is solving. Treat
+      // that same intentional guard as a successful local calculation, while
+      // preserving real MQTT/VRM failures as errors.
+      if (error instanceof Error && error.message === 'Schedule not sent: Push to Victron is disabled') {
+        plan.victronPushSkippedReason = 'Push to Victron is disabled';
+        console.info('[calculate] Victron push skipped', {
+          timestamp: new Date().toISOString(),
+          reason: plan.victronPushSkippedReason,
+        });
+        return plan;
+      }
+      throw error;
+    }
   }
   return plan;
 }

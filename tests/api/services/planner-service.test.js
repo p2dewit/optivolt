@@ -340,6 +340,15 @@ describe('selectSolveOptions', () => {
     expect(combo(384)).toEqual({ mip_rel_gap: 0.02, mip_abs_gap: 0.01, time_limit: 30 });
   });
 
+  it('uses a 2% proven gap for Green MILPs beyond 200 slots', () => {
+    expect(selectSolveOptions({ ...baseCfg(200), strategy: 'green' })).toEqual({ time_limit: 30 });
+    expect(selectSolveOptions({ ...baseCfg(201), strategy: 'green' })).toEqual({
+      mip_rel_gap: 0.02,
+      mip_abs_gap: 0.01,
+      time_limit: 30,
+    });
+  });
+
   it('treats a completed rebalance (0 remaining slots) as no rebalance', () => {
     expect(selectSolveOptions({ ...baseCfg(384), ev, rebalance: { holdSlots: 12, remainingSlots: 0, targetSoc_percent: 100 } }).mip_rel_gap).toBe(0.005);
   });

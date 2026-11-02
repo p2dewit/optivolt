@@ -8,7 +8,7 @@ export type Strategy = 'aggressive' | 'green';
 export interface GreenSocTarget {
   slot: number;
   soc_Wh: number;
-  boundary: 'sunrise' | 'sunset';
+  boundary: 'sunrise' | 'sunset' | 'next-charge';
 }
 
 
@@ -86,6 +86,10 @@ export interface SolverConfig {
   minimumSellPrice_cents_per_kWh?: number;
   maximumBuyPrice_cents_per_kWh?: number;
   greenSocTargets?: GreenSocTarget[];
+  greenBuyPriceThresholds_cents_per_kWh?: number[];
+  greenSellPriceThresholds_cents_per_kWh?: number[];
+  greenExportMargin_percent?: number;
+  greenGridImportPenalty_cents_per_kWh?: number;
 
   // Battery parameters
   stepSize_m: number;
