@@ -36,6 +36,8 @@ export function getElements() {
     greenSellPricePercentile: $("#strategy-sell-percentile"),
     greenExportMargin: $("#green-export-margin"),
     greenGridImportPenalty: $("#green-grid-import-penalty"),
+    solverMultiThreadingEnabled: $("#solver-multithreading-enabled"),
+    solverMaxThreads: $("#solver-max-threads"),
     rebalanceToggleLabel: $("#rebalance-toggle-label"),
     rebalanceEnabled: $("#rebalance-enabled"),
     rebalanceNudge: $("#rebalance-nudge"),
@@ -208,6 +210,12 @@ export function wireGlobalInputs(
   els.strategy?.addEventListener("input", () => syncStrategyLabel(true));
   els.strategy?.addEventListener("change", () => syncStrategyLabel(true));
   syncStrategyLabel();
+
+  const syncSolverThreadInput = () => {
+    if (els.solverMaxThreads) els.solverMaxThreads.disabled = !els.solverMultiThreadingEnabled?.checked;
+  };
+  els.solverMultiThreadingEnabled?.addEventListener("change", syncSolverThreadInput);
+  syncSolverThreadInput();
 
   els.terminal?.addEventListener("change", updateTerminalCustomUI);
   updateTerminalCustomUI();

@@ -1,0 +1,24 @@
+import { fetchVictronMode } from './api/api.js';
+
+export function initVictronModeIndicator(els) {
+  if (!els.victronMode) return;
+  let currentMode = null;
+  function paint() {
+    const ok = els.pushToVictron?.checked === true && currentMode === 4;
+    els.victronMode.innerHTML = `Mode: ${currentMode ?? '—'} <span aria-hidden="true">${ok ? '✓' : '✗'}</span>`;
+    els.victronMode.className = `text-sm font-medium ${ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`;
+  }
+  async function refresh() {
+    try {
+      const value = (await fetchVictronMode())?.mode;
+      currentMode = value == null || value === '' ? null : Number(value);
+      if (!Number.isFinite(currentMode)) currentMode = null;
+    }
+    catch { currentMode = null; }
+    paint();
+  }
+  els.pushToVictron?.addEventListener('change', () => { paint(); setTimeout(() => { void refresh(); }, 750); });
+  paint();
+  void refresh();
+  setInterval(() => { void refresh(); }, 30_000);
+}

@@ -12,6 +12,18 @@ export interface HighsSolution {
   Status?: string;
   ObjectiveValue?: number;
   Columns?: Record<string, HighsColumn>;
+  Diagnostics?: {
+    backend?: 'native' | 'wasm';
+    highsVersion?: string;
+    numRows?: number;
+    numColumns?: number;
+    numNonzeros?: number;
+    mipNodeCount?: number;
+    mipGap?: number;
+    mipDualBound?: number;
+    threads?: number;
+    parallel?: boolean;
+  };
 }
 
 // Statuses that can carry a feasible primal solution: "Optimal", plus early

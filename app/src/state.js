@@ -49,6 +49,8 @@ export function snapshotUI(els) {
     greenSellPricePercentile_percent: num(els.greenSellPricePercentile?.value),
     greenExportMargin_percent: num(els.greenExportMargin?.value),
     greenGridImportPenalty_cents_per_kWh: num(els.greenGridImportPenalty?.value),
+    solverMultiThreadingEnabled: !!els.solverMultiThreadingEnabled?.checked,
+    solverMaxThreads: num(els.solverMaxThreads?.value),
 
     // ALGORITHM
     rebalanceEnabled: !!els.rebalanceEnabled?.checked,
@@ -138,6 +140,14 @@ export function hydrateUI(els, obj = {}) {
   setIfDef(els.greenSellPricePercentile, obj.greenSellPricePercentile_percent);
   setIfDef(els.greenExportMargin, obj.greenExportMargin_percent);
   setIfDef(els.greenGridImportPenalty, obj.greenGridImportPenalty_cents_per_kWh);
+  if (els.solverMultiThreadingEnabled && obj.solverMultiThreadingEnabled != null) {
+    els.solverMultiThreadingEnabled.checked = !!obj.solverMultiThreadingEnabled;
+  }
+  setIfDef(els.solverMaxThreads, obj.solverMaxThreads);
+  if (els.solverMaxThreads && Number.isInteger(obj.solverCpuLimit) && obj.solverCpuLimit > 0) {
+    els.solverMaxThreads.max = String(obj.solverCpuLimit);
+  }
+  if (els.solverMaxThreads) els.solverMaxThreads.disabled = !els.solverMultiThreadingEnabled?.checked;
 
   // HOME ASSISTANT
   setIfDef(els.haUrl, obj.haUrl);

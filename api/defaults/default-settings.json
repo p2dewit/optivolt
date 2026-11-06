@@ -55,5 +55,7 @@
   "greenBuyPricePercentile_percent": 25,
   "greenSellPricePercentile_percent": 75,
   "greenExportMargin_percent": 25,
-  "greenGridImportPenalty_cents_per_kWh": 1000
+  "greenGridImportPenalty_cents_per_kWh": 1000,
+  "solverMultiThreadingEnabled": true,
+  "solverMaxThreads": 4
 }

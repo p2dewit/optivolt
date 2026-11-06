@@ -22,6 +22,8 @@ export function requestRemoteSolve(body = {}) {
 export function fetchLastPlan() {
   return getJson("/calculate/last");
 }
+export const startSolverBenchmark = () => postJson("/solver/benchmark", {});
+export const fetchSolverBenchmark = (id) => getJson(`/solver/benchmark/${encodeURIComponent(id)}`);
 
 // --- Data ---
 export function fetchStoredData() {

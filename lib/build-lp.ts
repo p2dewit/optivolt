@@ -80,6 +80,10 @@ export function buildLP({
   const activeGreenSocTargets = strategy === 'green'
     ? greenSocTargets.filter(target => Number.isInteger(target.slot) && target.slot >= 0 && target.slot < T && Number.isFinite(target.soc_Wh))
     : [];
+  // SoC is non-negative, so a reserve shortfall cannot exceed its target.
+  // Per-target bounds preserve the integer model while strengthening its LP
+  // relaxation compared with a horizon-wide discharge-based Big-M.
+  const greenReserveShortfallLimit_Wh = activeGreenSocTargets.map(target => Math.max(0, target.soc_Wh));
   const greenSocShortfall = (index: number) => `green_soc_shortfall_${index}`;
   const greenTargetIndexBySlot = new Map<number, number>(
     activeGreenSocTargets.map((target, index): [number, number] => [target.slot, index]),
@@ -119,11 +123,6 @@ export function buildLP({
   const minSoc_Wh = (minSoc_percent / 100) * batteryCapacity_Wh;
   const maxSoc_Wh = (maxSoc_percent / 100) * batteryCapacity_Wh;
   const initialSoc_Wh = (initialSoc_percent / 100) * batteryCapacity_Wh;
-  // A conservative finite big-M for the reserve/export gate, accounting for
-  // every slot's maximum possible battery discharge and idle drain.
-  const greenReserveBigM_Wh = maxSoc_Wh
-    + T * (maxDischargePower_W * stepHours / (dischargeEfficiency_percent / 100) + idleDrain_Wh);
-
   // Rebalancing MILP: number of slots remaining in the hold window.
   // Truncate to integer to guard against fractional values from future callers.
   // Clamp to [0, T] — D > T is unsatisfiable; D <= 0 means no rebalancing this solve.
@@ -378,7 +377,8 @@ export function buildLP({
     const targetIndex = greenTargetIndexBySlot.get(t)!;
     const targetShortfall = greenSocShortfall(targetIndex);
     // Exact soft-reserve gate, retained only in price slots where export is possible.
-    lines.push(` c_green_export_reserve_${t}: ${targetShortfall} + ${toNum(greenReserveBigM_Wh)} ${greenExportAllowed(t)} <= ${toNum(greenReserveBigM_Wh)}`);
+    const reserveBigM = greenReserveShortfallLimit_Wh[targetIndex];
+    lines.push(` c_green_export_reserve_${t}: ${targetShortfall} + ${toNum(reserveBigM)} ${greenExportAllowed(t)} <= ${toNum(reserveBigM)}`);
     lines.push(` c_green_export_gate_${t}: ${batteryToGrid(t)} - ${toNum(greenBatteryExportUpperBound(t))} ${greenExportAllowed(t)} <= 0`);
   }
 
@@ -513,7 +513,7 @@ export function buildLP({
   }
   for (let i = 0; i < activeGreenSocTargets.length; i++) {
     lines.push(` ${greenSocShortfall(i)} >= 0`);
-    lines.push(` ${greenSocShortfall(i)} <= ${toNum(greenReserveBigM_Wh)}`);
+    lines.push(` ${greenSocShortfall(i)} <= ${toNum(greenReserveShortfallLimit_Wh[i])}`);
   }
   lines.push("");
 

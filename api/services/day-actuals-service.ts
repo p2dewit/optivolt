@@ -273,7 +273,13 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
     const batteryW = values?.get(BATTERY);
     const hasBattery = Number.isFinite(batteryW);
     const pvReadings = activePvIds.map(id => values?.get(id));
-    const hasPv = activePvIds.length > 0 && pvReadings.every(Number.isFinite);
+    const availablePvReadings = pvReadings.filter(Number.isFinite);
+    // Keep charting from the PV sensors that still report. A single sensor
+    // becoming unavailable must not hide all otherwise valid grid/battery
+    // flows for the rest of the day. pvObserved below still records whether
+    // the full set of today's active PV sensors was present.
+    const hasPv = availablePvReadings.length > 0;
+    const hasCompletePv = activePvIds.length > 0 && availablePvReadings.length === activePvIds.length;
 
     if (hasGrid) {
       quality.gridObservedMs += durationMs;
@@ -325,7 +331,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
       quality.missingBatteryMs += durationMs;
     }
 
-    if (hasPv) {
+    if (hasCompletePv) {
       quality.pvObservedMs += durationMs;
       bucket.pvObservedMs += durationMs;
     } else {
@@ -334,7 +340,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
 
     if (hasGrid && hasBattery && hasPv) {
       const gridW = gridReadings.reduce<number>((sum, value) => sum + Number(value), 0);
-      const pvW = Math.max(0, pvReadings.reduce<number>((sum, value) => sum + Number(value), 0));
+      const pvW = Math.max(0, availablePvReadings.reduce<number>((sum, value) => sum + Number(value), 0));
       const flows = splitFlows(gridW, pvW, Number(batteryW));
       const hours = durationMs / 3_600_000;
       for (const key of FLOW_KEYS) bucket.flowWh[key] += flows[key] * hours;

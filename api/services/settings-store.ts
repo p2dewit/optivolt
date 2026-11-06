@@ -23,12 +23,14 @@ const NUMERIC_FIELDS: (keyof Settings)[] = [
   'maximumBuyPrice_eur_per_kWh',
   'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent',
   'greenExportMargin_percent', 'greenGridImportPenalty_cents_per_kWh',
+  'solverMaxThreads',
 ];
 
 // Strictly positive: zero step size, capacities, hold hours, or charge currents are unusable.
 const POSITIVE_FIELDS: (keyof Settings)[] = [
   'stepSize_m', 'batteryCapacity_Wh', 'rebalanceHoldHours',
   'evMinChargeCurrent_A', 'evMaxChargeCurrent_A', 'evBatteryCapacity_kWh',
+  'solverMaxThreads',
 ];
 
 // Zero is a valid limit/cost (e.g. no grid export allowed); negative is not.
@@ -46,7 +48,7 @@ const EFFICIENCY_FIELDS: (keyof Settings)[] = [
 ];
 
 const BOOLEAN_FIELDS: (keyof Settings)[] = [
-  'blockFeedInOnNegativePrices', 'rebalanceEnabled', 'evEnabled', 'netMetering', 'pushToVictronEnabled', 'updateDataBeforeRun', 'tableShowKwh', 'tableShowDess',
+  'blockFeedInOnNegativePrices', 'rebalanceEnabled', 'evEnabled', 'netMetering', 'pushToVictronEnabled', 'updateDataBeforeRun', 'tableShowKwh', 'tableShowDess', 'solverMultiThreadingEnabled',
 ];
 
 const STRING_FIELDS: (keyof Settings)[] = ['haUrl', 'haToken', 'evSocSensor', 'evPlugSensor'];
@@ -78,6 +80,9 @@ function validateSettings(s: Settings): Settings {
     if ((s[field] as number) <= 0) {
       throw new SettingsValidationError(`Invalid setting: ${field} must be > 0`);
     }
+  }
+  if (!Number.isInteger(s.solverMaxThreads) || s.solverMaxThreads > 64) {
+    throw new SettingsValidationError('Invalid setting: solverMaxThreads must be an integer from 1 to 64');
   }
   for (const field of NON_NEGATIVE_FIELDS) {
     if ((s[field] as number) < 0) {

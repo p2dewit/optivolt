@@ -80,6 +80,8 @@ export interface Settings {
   greenSellPricePercentile_percent: number;
   greenExportMargin_percent: number;
   greenGridImportPenalty_cents_per_kWh: number;
+  solverMultiThreadingEnabled: boolean;
+  solverMaxThreads: number;
 }
 
 // ----------------------------- Persisted data ---------------------------

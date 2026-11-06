@@ -8,6 +8,10 @@ This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt),
 
 OptiVolt 2.0 upgrades the solver from HiGHS **1.8.0** to **1.15.1**. The production build is native and supports multi-threaded solving, configured to use four threads/CPUs. In a six-day Green-strategy benchmark of roughly 665 quarter-hour slots, solve time was about **5.1 seconds**, compared with about **22.4 seconds** on the previous single-threaded solver—approximately **4.5× faster**. Solve times vary with the input data and model.
 
+The Settings tab's **SOLVER** section lets you turn multi-threading on or off and set a maximum thread count. The selected count is limited to the CPUs available to OptiVolt. When multi-threading is off, native HiGHS uses one thread; the WebAssembly fallback is single-threaded.
+
+**Find optimum** runs the current Green model sequentially with parallel solving disabled and then enabled at each thread count from 1 up to the configured maximum. It recommends the fastest configuration that reaches HiGHS' optimal status within the configured MIP gap (or the fastest feasible configuration if none reaches that status), and displays every measured run. The benchmark does not change saved solver settings or send a schedule to Victron. It requires a native HiGHS bridge built with configurable thread support.
+
 ## Optimizer tab overview
 
 The **Optimizer** tab is the main overview for planning and operating the home battery. It brings the selected strategy, measured energy flows, the optimized schedule, run controls, and supporting charts together on one page.

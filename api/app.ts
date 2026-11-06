@@ -15,6 +15,7 @@ import forecastAccuracyRouter from './routes/forecast-accuracy.ts';
 import liveBlockGuardRouter from './routes/live-block-guard.ts';
 import victronRouter from './routes/victron.ts';
 import dayActualsRouter from './routes/day-actuals.ts';
+import solverRouter from './routes/solver.ts';
 
 const app = express();
 app.disable('x-powered-by');
@@ -35,6 +36,7 @@ app.use('/forecast-accuracy', forecastAccuracyRouter);
 app.use('/live-block-guard', liveBlockGuardRouter);
 app.use('/victron', victronRouter);
 app.use('/day-actuals', dayActualsRouter);
+app.use('/solver', solverRouter);
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ message: 'Optivolt API is running.' });

@@ -42,6 +42,16 @@ function mergeDay(previous: DayActuals | undefined, incoming: DayActuals): DayAc
       merged.batteryWearCost_cents = old.batteryWearCost_cents;
       merged.batteryObservedMinutes = old.batteryObservedMinutes;
     }
+    // A late update may lose one GX PV sensor after it becomes unavailable.
+    // Keep a previously complete flow row instead of replacing it with a
+    // partial PV sum; brand-new rows still retain whatever partial flows we
+    // can calculate from the sensors that remain available.
+    if ((Number(row.pvObservedMinutes) || 0) < (Number(old.pvObservedMinutes) || 0)) {
+      for (const key of ['load', 'pv', 'imp', 'exp', 'pv2l', 'pv2b', 'pv2g', 'b2l', 'b2g', 'g2l', 'g2b', 'g2ev', 'pv2ev', 'b2ev'] as const) merged[key] = old[key];
+      merged.observedMinutes = old.observedMinutes;
+      merged.pvObservedMinutes = old.pvObservedMinutes;
+      merged.missing = old.missing;
+    }
     if ((Number(row.observedMinutes) || 0) < (Number(old.observedMinutes) || 0)) {
       for (const key of ['load', 'pv', 'imp', 'exp', 'pv2l', 'pv2b', 'pv2g', 'b2l', 'b2g', 'g2l', 'g2b', 'g2ev', 'pv2ev', 'b2ev'] as const) merged[key] = old[key];
       merged.observedMinutes = old.observedMinutes;

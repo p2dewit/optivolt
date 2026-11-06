@@ -1053,6 +1053,30 @@
 
       <!-- Right column: the sensor list, which is long enough to hold a column on its own -->
       <div class="space-y-6">
+        <!-- Solver Card -->
+        <section class="card">
+          <div class="mb-4">
+            <h2 class="sidebar-label">SOLVER</h2>
+          </div>
+          <div class="space-y-3">
+            <label class="toggle">
+              <input id="solver-multithreading-enabled" type="checkbox" checked data-settings-input>
+              <span class="toggle-knob"></span>
+              <span class="text-sm">Enable multi-threading</span>
+            </label>
+            <label class="block text-sm">Maximum threads
+              <input id="solver-max-threads" type="number" min="1" max="64" step="1" value="4" class="form-input" data-settings-input />
+            </label>
+            <p class="text-xs text-slate-500 dark:text-slate-400">When enabled, native HiGHS can use up to the selected number of available CPU threads. When disabled, it uses one thread. The WASM fallback is single-threaded.</p>
+            <button id="solver-find-optimum" type="button"
+              class="w-full rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-wait disabled:opacity-60">
+              Find optimum
+            </button>
+            <p id="solver-benchmark-status" class="text-xs text-slate-500 dark:text-slate-400" role="status" aria-live="polite"></p>
+            <div id="solver-benchmark-results" class="hidden rounded-lg border border-slate-200 dark:border-white/10 p-3 text-xs"></div>
+          </div>
+        </section>
+
         <!-- Sensors Card -->
         <section class="card">
           <div class="mb-4">

@@ -1,4 +1,5 @@
 import { mapRowsToDessV2 } from '../../lib/dess-mapper.ts';
+import { availableParallelism } from 'node:os';
 import { buildLP } from '../../lib/build-lp.ts';
 import { parseSolution, type HighsSolution } from '../../lib/parse-solution.ts';
 import { buildPlanSummary } from '../../lib/plan-summary.ts';
@@ -28,12 +29,13 @@ let pushedPlanComputedAtMs: number | null = null;
 // solve well under a second; this only kicks in when something degenerates
 // (or once longer horizons multiply the binary count).
 const SOLVE_TIME_LIMIT_S = 30;
-// MIP gap tuning. Large Green horizons and the EV × rebalance combination
-// create many binary choices, so accept a proven 2% optimality gap for those
-// cases to avoid routinely hitting the hard time limit. Hardware writes still
-// require HiGHS to report Optimal; the gap is part of that solver proof.
+// Large Green horizons use the proven 2% gap to stay within the solve limit.
+// The native parallel build helps performance but does not guarantee that
+// every hard model will reach a tighter gap in time.
+// Hardware writes still require HiGHS to report Optimal.
 const MIP_REL_GAP = 0.005;
 const MIP_REL_GAP_LARGE = 0.02;
+const MIP_REL_GAP_GREEN = 0.02;
 const LARGE_MILP_SLOTS = 200;
 
 export type { RebalanceWindow };
@@ -100,9 +102,8 @@ function attachOriginalPredictionValues(rows: PlanRow[], data: Data): PlanRow[] 
  * Solver options for a config. The solve runs on a worker thread, so a
  * runaway MIP no longer blocks HTTP requests; the time limit still bounds
  * how long a schedule write can be delayed (a limited solve comes back
- * non-Optimal and is refused for hardware writes). The EV × rebalance
- * combination on a multi-day horizon gets the loosened MIP gap; everything
- * else keeps the tight default.
+ * non-Optimal and is refused for hardware writes). Large Green horizons and
+ * large EV × rebalance models use a 2% gap.
  */
 export function selectSolveOptions(cfg: SolverConfig): { mip_rel_gap?: number; mip_abs_gap?: number; time_limit: number } {
   const hasEv = cfg.ev != null;
@@ -110,9 +111,9 @@ export function selectSolveOptions(cfg: SolverConfig): { mip_rel_gap?: number; m
   const largeGreen = cfg.strategy === 'green' && cfg.load_W.length > LARGE_MILP_SLOTS;
   if (!hasEv && !hasRebalance && !largeGreen) return { time_limit: SOLVE_TIME_LIMIT_S };
   const largeMilpCombo = hasEv && hasRebalance && cfg.load_W.length > LARGE_MILP_SLOTS;
-  const relaxedGap = largeGreen || largeMilpCombo;
+  const mipRelGap = largeGreen ? MIP_REL_GAP_GREEN : largeMilpCombo ? MIP_REL_GAP_LARGE : MIP_REL_GAP;
   return {
-    mip_rel_gap: relaxedGap ? MIP_REL_GAP_LARGE : MIP_REL_GAP,
+    mip_rel_gap: mipRelGap,
     mip_abs_gap: 0.01,
     time_limit: SOLVE_TIME_LIMIT_S,
   };
@@ -166,7 +167,14 @@ function normalizePersistedData(loadedData: Data, evState: EvLiveState | undefin
   };
 }
 
-export async function getSolverInputs(): Promise<{ cfg: SolverConfig; pricesKnownUntilMs?: number; timing: { startMs: number; stepMin: number }; data: Data; settings: Settings }> {
+export async function getSolverInputs(): Promise<{
+  cfg: SolverConfig;
+  pricesKnownUntilMs?: number;
+  timing: { startMs: number; stepMin: number };
+  data: Data;
+  settings: Settings;
+  evState?: EvLiveState;
+}> {
   const [settings, loadedData] = await Promise.all([loadSettings(), loadData()]);
   const startMs = getQuarterStart(new Date(), settings.stepSize_m);
 
@@ -179,7 +187,7 @@ export async function getSolverInputs(): Promise<{ cfg: SolverConfig; pricesKnow
 
   const adjustedData = applyPredictionAdjustmentsToData(data);
   const { cfg, pricesKnownUntilMs } = buildSolverConfigFromSettings(settings, adjustedData, startMs, evState);
-  return { cfg, pricesKnownUntilMs, timing: { startMs, stepMin: settings.stepSize_m }, data, settings };
+  return { cfg, pricesKnownUntilMs, timing: { startMs, stepMin: settings.stepSize_m }, data, settings, evState };
 }
 
 /**
@@ -260,9 +268,24 @@ export async function computePlan({ updateData = false } = {}): Promise<ComputeP
         stepMin: timing.stepMin,
       })
     : undefined;
-  const t0 = performance.now();
-  const result = await solveLp(lpText, solveOptions, warmColumns);
-  const solveMs = performance.now() - t0;
+  const solverSettings = {
+    multiThreadingEnabled: settings.solverMultiThreadingEnabled,
+    maxThreads: Math.min(settings.solverMaxThreads, 64, availableParallelism()),
+  };
+  const queuedAt = performance.now();
+  let startedAt: number | undefined;
+  const result = await solveLp(lpText, solveOptions, warmColumns, solverSettings, () => {
+    startedAt = performance.now();
+  }, {
+    purpose: 'plan',
+    strategy: cfg.strategy,
+    horizonDays: settings.extendedHorizonDays,
+    slots: cfg.load_W.length,
+  });
+  const finishedAt = performance.now();
+  const queueWaitMs = startedAt == null ? null : Math.round(startedAt - queuedAt);
+  const solveMs = Math.round(finishedAt - (startedAt ?? queuedAt));
+  const solveWallMs = Math.round(finishedAt - queuedAt);
   // The await above yields the event loop, so settings/data routes can run
   // mid-solve. When they did, this plan's snapshots are stale: persisting
   // them would clobber the newer state, so all post-solve bookkeeping below
@@ -281,10 +304,31 @@ export async function computePlan({ updateData = false } = {}): Promise<ComputeP
   } : null;
   console.log('[calculate] solve', {
     slots: cfg.load_W.length,
+    strategy: cfg.strategy,
+    horizonDays: settings.extendedHorizonDays,
+    lpBytes: Buffer.byteLength(lpText, 'utf8'),
+    constraintRows: (lpText.match(/^\s+c_[\w]+:/gm) ?? []).length,
+    binaryColumns: (() => {
+      const section = lpText.split(/\nBinaries\s*\n/)[1]?.split(/\nEnd\s*$/)[0] ?? '';
+      return section.trim() ? section.trim().split(/\s+/).length : 0;
+    })(),
     ev: evInfo,
     rebalance: hasRebalance,
+    solverBackend: result.Diagnostics?.backend ?? 'unknown',
+    highsVersion: result.Diagnostics?.highsVersion ?? null,
+    solverThreads: result.Diagnostics?.threads ?? (solverSettings.multiThreadingEnabled ? solverSettings.maxThreads : 1),
+    solverParallel: result.Diagnostics?.parallel ?? solverSettings.multiThreadingEnabled,
+    warmStartColumns: Object.keys(warmColumns ?? {}).length,
+    queueWaitMs,
+    solveWallMs,
     ...('mip_rel_gap' in solveOptions ? { mipRelGap: solveOptions.mip_rel_gap } : {}),
-    solveMs: Math.round(solveMs),
+    ...(result.Diagnostics?.numRows != null ? { modelRows: result.Diagnostics.numRows } : {}),
+    ...(result.Diagnostics?.numColumns != null ? { modelColumns: result.Diagnostics.numColumns } : {}),
+    ...(result.Diagnostics?.numNonzeros != null ? { modelNonzeros: result.Diagnostics.numNonzeros } : {}),
+    ...(result.Diagnostics?.mipNodeCount != null ? { mipNodeCount: result.Diagnostics.mipNodeCount } : {}),
+    ...(result.Diagnostics?.mipGap != null ? { mipGap: result.Diagnostics.mipGap } : {}),
+    ...(result.Diagnostics?.mipDualBound != null ? { mipDualBound: result.Diagnostics.mipDualBound } : {}),
+    solveMs,
     status: result.Status,
   });
 

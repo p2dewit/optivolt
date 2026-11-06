@@ -21,6 +21,7 @@ import {
 } from "./src/state.js";
 import { initDayActuals } from "./src/day-actuals.js";
 import { initVictronModeIndicator } from "./src/victron-mode.js";
+import { initSolverBenchmark } from "./src/solver-benchmark.js";
 
 const accuracyTooltip = mountForecastAccuracyTooltip([
   document.getElementById("forecast-accuracy"),
@@ -149,6 +150,7 @@ async function boot() {
   const { config: initialConfig, source } = await loadInitialConfig();
 
   hydrateUI(els, initialConfig);
+  initSolverBenchmark();
   initDayActuals(els);
   initVictronModeIndicator(els);
   optimizer.hydrateChartPreferences(initialConfig);

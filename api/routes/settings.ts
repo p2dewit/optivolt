@@ -1,5 +1,6 @@
 import { releaseDynamicEssToVrm, ensureDynamicEssMode4 } from '../services/mqtt-service.ts';
 import express from 'express';
+import { availableParallelism } from 'node:os';
 import type { Request, Response, NextFunction } from 'express';
 import { assertCondition, toHttpError } from '../http-errors.ts';
 import {
@@ -29,7 +30,12 @@ let vrmHandoverPending = false;
 router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const settings = await loadSettings();
-    res.json({ ...redactSettingsForClient(settings), isAddon: isAddon() });
+    const solverCpuLimit = Math.min(64, availableParallelism());
+    res.json({
+      ...redactSettingsForClient({ ...settings, solverMaxThreads: Math.min(settings.solverMaxThreads, solverCpuLimit) }),
+      isAddon: isAddon(),
+      solverCpuLimit,
+    });
   } catch (error) {
     next(toHttpError(error, 500, 'Failed to read settings'));
   }
