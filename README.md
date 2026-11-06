@@ -1,8 +1,8 @@
 # OptiVolt 🔋
 
-## Changes in this fork — OptiVolt DESS 2.0
+## Changes in this fork — OptiVolt DESS
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **2.0** in the page header identifies the current release.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **2.1** in the page header identifies the current release.
 
 ## HiGHS 1.15.1 and parallel solving
 

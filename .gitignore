@@ -14,7 +14,6 @@ docs/superpowers/
 !.env.example
 /backups/
 /data/
-/native/highs/bin/
 *.bak
 *.pem
 *.key

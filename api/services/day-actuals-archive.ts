@@ -9,6 +9,18 @@ const archiveDir = () => path.join(resolveDataDir(), 'day-actuals');
 const archivePath = (dateKey: string) => path.join(archiveDir(), `${dateKey}.json`);
 let queue: Promise<unknown> = Promise.resolve();
 
+function pricedMinutes(
+  row: DayActuals['rows'][number],
+  flowKey: 'imp' | 'exp',
+  pricedKey: 'pricedImportMinutes' | 'pricedExportMinutes',
+  missingKey: 'missingImportPriceMinutes' | 'missingExportPriceMinutes',
+): number {
+  const explicit = Number(row[pricedKey]);
+  if (Number.isFinite(explicit)) return explicit;
+  if (!(Number(row[flowKey]) > 0)) return 0;
+  return Math.max(0, (Number(row.gridObservedMinutes) || 0) - (Number(row[missingKey]) || 0));
+}
+
 async function readDay(dateKey: string): Promise<DayActuals | null> {
   try {
     return await readJson<DayActuals>(archivePath(dateKey));
@@ -37,6 +49,22 @@ function mergeDay(previous: DayActuals | undefined, incoming: DayActuals): DayAc
       merged.pricedExportMinutes = old.pricedExportMinutes;
       merged.ic = old.ic;
       merged.ec = old.ec;
+    }
+    const oldPricedImport = pricedMinutes(old, 'imp', 'pricedImportMinutes', 'missingImportPriceMinutes');
+    const newPricedImport = pricedMinutes(row, 'imp', 'pricedImportMinutes', 'missingImportPriceMinutes');
+    if (newPricedImport < oldPricedImport) {
+      merged.importCost_cents = old.importCost_cents;
+      merged.missingImportPriceMinutes = old.missingImportPriceMinutes;
+      merged.pricedImportMinutes = oldPricedImport;
+      if (old.ic !== null && old.ic !== undefined) merged.ic = old.ic;
+    }
+    const oldPricedExport = pricedMinutes(old, 'exp', 'pricedExportMinutes', 'missingExportPriceMinutes');
+    const newPricedExport = pricedMinutes(row, 'exp', 'pricedExportMinutes', 'missingExportPriceMinutes');
+    if (newPricedExport < oldPricedExport) {
+      merged.exportCost_cents = old.exportCost_cents;
+      merged.missingExportPriceMinutes = old.missingExportPriceMinutes;
+      merged.pricedExportMinutes = oldPricedExport;
+      if (old.ec !== null && old.ec !== undefined) merged.ec = old.ec;
     }
     if ((Number(row.batteryObservedMinutes) || 0) < (Number(old.batteryObservedMinutes) || 0)) {
       merged.batteryWearCost_cents = old.batteryWearCost_cents;
@@ -176,7 +204,9 @@ export function startDayActualsArchive(): void {
             const day = new Date(base);
             day.setUTCDate(day.getUTCDate() - ago);
             const key = day.toISOString().slice(0, 10);
-            if (!(await readArchivedDayActuals(key))) {
+            const archived = await readArchivedDayActuals(key);
+            const pricesIncomplete = archived?.rows.some(row => !Number.isFinite(row.ic) || !Number.isFinite(row.ec));
+            if (!archived || pricesIncomplete) {
               try { await fetchAndStoreDayActuals(new Date(), key); }
               catch (error) { console.warn(`[day-actuals] could not backfill ${key}:`, error instanceof Error ? error.message : String(error)); }
             }

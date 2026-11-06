@@ -157,7 +157,7 @@ interface QuarterBucket {
   ec: number | null;
 }
 
-function makeBucket(timestampMs: number, data: Awaited<ReturnType<typeof loadData>>): QuarterBucket {
+function makeBucket(timestampMs: number, ic: number | null, ec: number | null): QuarterBucket {
   return {
     timestampMs,
     expectedMs: 0,
@@ -173,8 +173,8 @@ function makeBucket(timestampMs: number, data: Awaited<ReturnType<typeof loadDat
     costs_cents: 0,
     revenue_cents: 0,
     batteryCosts_cents: 0,
-    ic: seriesValueAt(data.importPrice, timestampMs),
-    ec: seriesValueAt(data.exportPrice, timestampMs),
+    ic,
+    ec,
   };
 }
 
@@ -216,6 +216,15 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
     }),
   ]);
   const historyPrices = allInPricesFromHistory(priceHistory, startMs, queryEnd, settings);
+  const actualPriceAt = (
+    historyPrice: { start: string; step?: number; values: number[] } | null,
+    dataPrice: { start: string; step?: number; values: number[] } | null | undefined,
+    hasBasePrice: boolean,
+    timestampMs: number,
+  ): number | null => seriesValueAt(historyPrice, timestampMs)
+    ?? (settings.dataSources.prices === 'api' && !hasBasePrice
+      ? null
+      : seriesValueAt(dataPrice, timestampMs));
 
   const samples = new Map<number, Map<string, number>>();
   for (const [id, readings] of Object.entries(raw)) {
@@ -235,7 +244,11 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
     const timestampMs = Math.floor(sampleStart / QUARTER_MS) * QUARTER_MS;
     let bucket = buckets.get(timestampMs);
     if (!bucket) {
-      bucket = makeBucket(timestampMs, data);
+      bucket = makeBucket(
+        timestampMs,
+        actualPriceAt(historyPrices.importPrice, data.importPrice, Boolean(data.importPriceBase), timestampMs),
+        actualPriceAt(historyPrices.exportPrice, data.exportPrice, Boolean(data.exportPriceBase), timestampMs),
+      );
       buckets.set(timestampMs, bucket);
     }
     return bucket;
@@ -289,14 +302,8 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
       const exp = Math.max(0, -gridW);
       // API mode uses the same HA base-price and tariff path as pushed API data.
       // VRM mode retains its selected VRM series as the fallback.
-      const ic = seriesValueAt(historyPrices.importPrice, intervalStart)
-        ?? (settings.dataSources.prices === 'api'
-          ? data.importPriceBase ? seriesValueAt(data.importPrice, intervalStart) : null
-          : seriesValueAt(data.importPrice, intervalStart));
-      const ec = seriesValueAt(historyPrices.exportPrice, intervalStart)
-        ?? (settings.dataSources.prices === 'api'
-          ? data.exportPriceBase ? seriesValueAt(data.exportPrice, intervalStart) : null
-          : seriesValueAt(data.exportPrice, intervalStart));
+      const ic = bucket.ic;
+      const ec = bucket.ec;
       if (imp === 0) {
         // No energy needs pricing for this interval.
       } else if (ic !== null) {
