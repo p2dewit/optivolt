@@ -29,15 +29,19 @@ export function getElements() {
     vatPercent: $("#price-vat-percent"),
     netMetering: $("#net-metering"),
     strategy: $("#strategy-mode"),
+    planStrategySelect: $("#plan-strategy-select"),
     planStrategy: $("#plan-strategy-value"),
-    planStrategyToggle: $("#plan-strategy-toggle"),
     maximumBuyPrice: $("#strategy-max-buy-price"),
     greenBuyPricePercentile: $("#strategy-buy-percentile"),
     greenSellPricePercentile: $("#strategy-sell-percentile"),
+    winterBuyPricePercentile: $("#winter-buy-percentile"),
     greenExportMargin: $("#green-export-margin"),
     greenGridImportPenalty: $("#green-grid-import-penalty"),
     solverMultiThreadingEnabled: $("#solver-multithreading-enabled"),
     solverMaxThreads: $("#solver-max-threads"),
+    solverTimeLimit: $("#solver-time-limit"),
+    solverBenchmarkStrategy: $("#solver-benchmark-strategy"),
+    solverMipGap: $("#solver-mip-gap"),
     rebalanceToggleLabel: $("#rebalance-toggle-label"),
     rebalanceEnabled: $("#rebalance-enabled"),
     rebalanceNudge: $("#rebalance-nudge"),
@@ -194,6 +198,10 @@ export function wireGlobalInputs(
   const syncStrategyLabel = (calculating = false) => {
     setPlanStrategyCalculating(els, calculating);
     updatePlanStrategyUI(els);
+    const strategy = els.strategy?.value;
+    document.querySelector("#green-settings")?.classList.toggle("hidden", strategy !== "green");
+    document.querySelector("#winter-settings")?.classList.toggle("hidden", strategy !== "winter");
+    document.querySelector("#trade-settings")?.classList.toggle("hidden", strategy !== "aggressive");
   };
 
   // Auto-save only settings-owned controls.
@@ -207,26 +215,43 @@ export function wireGlobalInputs(
     }
   }
 
-  els.strategy?.addEventListener("input", () => syncStrategyLabel(true));
-  els.strategy?.addEventListener("change", () => syncStrategyLabel(true));
+  if (els.planStrategySelect && els.strategy) els.planStrategySelect.value = els.strategy.value;
+  els.strategy?.addEventListener("input", () => syncStrategyLabel(false));
+  els.strategy?.addEventListener("change", () => syncStrategyLabel(false));
+  els.planStrategySelect?.addEventListener("change", () => {
+    if (!els.strategy) return;
+    els.strategy.value = els.planStrategySelect.value;
+    els.strategy.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   syncStrategyLabel();
 
   const syncSolverThreadInput = () => {
     if (els.solverMaxThreads) els.solverMaxThreads.disabled = !els.solverMultiThreadingEnabled?.checked;
   };
+  // Keep one visible MIP-gap input while retaining an independent value for
+  // each strategy. Capture phase ensures the settings snapshot sees the
+  // newly selected strategy and its corresponding gap.
+  let activeMipGapStrategy = els.solverBenchmarkStrategy?.value || "green";
+  const gapDatasetKey = (strategy) => `mipGap${strategy[0].toUpperCase()}${strategy.slice(1)}`;
+  const saveVisibleMipGap = () => {
+    if (els.solverMipGap) els.solverMipGap.dataset[gapDatasetKey(activeMipGapStrategy)] = els.solverMipGap.value;
+  };
+  const syncVisibleMipGap = () => {
+    if (!els.solverBenchmarkStrategy || !els.solverMipGap) return;
+    saveVisibleMipGap();
+    activeMipGapStrategy = els.solverBenchmarkStrategy.value || "green";
+    const value = els.solverMipGap.dataset[gapDatasetKey(activeMipGapStrategy)];
+    els.solverMipGap.value = value ?? "2.00";
+  };
+  els.solverBenchmarkStrategy?.addEventListener("input", syncVisibleMipGap, true);
+  els.solverBenchmarkStrategy?.addEventListener("change", syncVisibleMipGap, true);
+  els.solverMipGap?.addEventListener("input", saveVisibleMipGap, true);
+  els.solverMipGap?.addEventListener("change", saveVisibleMipGap, true);
   els.solverMultiThreadingEnabled?.addEventListener("change", syncSolverThreadInput);
   syncSolverThreadInput();
 
   els.terminal?.addEventListener("change", updateTerminalCustomUI);
   updateTerminalCustomUI();
-
-  // Switch strategy from the PLAN RESULT card using its up/down control.
-  els.planStrategyToggle?.addEventListener("click", () => {
-    if (!els.strategy) return;
-    els.strategy.value = els.strategy.value === "green" ? "aggressive" : "green";
-    els.strategy.dispatchEvent(new Event("input", { bubbles: true }));
-    els.strategy.dispatchEvent(new Event("change", { bubbles: true }));
-  });
 
   // Manual recompute
   els.run?.addEventListener("click", onRun);

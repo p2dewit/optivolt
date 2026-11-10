@@ -38,7 +38,7 @@
   <header class="border-b border-white/60 dark:border-white/5 bg-white/70 dark:bg-slate-900/60 backdrop-blur">
     <div class="relative mx-auto w-full max-w-7xl px-4 py-2 sm:py-3 flex items-center justify-between">
       <h1 class="text-2xl font-bold tracking-tight shrink-0">Optivolt <span
-          class="text-xl font-normal text-slate-400 dark:text-slate-500">DESS</span> <span id="app-version" class="text-sm font-normal text-slate-400 dark:text-slate-500" style="position: relative; top: -0.5em;" aria-label="Version 2.1">2.1</span></h1>
+          class="text-xl font-normal text-slate-400 dark:text-slate-500">DESS</span> <span id="app-version" class="text-sm font-normal text-slate-400 dark:text-slate-500" style="position: relative; top: -0.5em;" aria-label="Version 2.2">2.2</span></h1>
       <div class="flex items-center gap-2">
         <nav role="tablist" class="sm:absolute sm:left-1/2 sm:-translate-x-1/2">
           <div class="flex rounded-full bg-slate-100 p-0.5 dark:bg-slate-800">
@@ -116,9 +116,13 @@
         <div class="plan-result-grid grid grid-cols-4 gap-2">
           <div class="total-plan-cost-tile plan-strategy-tile">
             <div class="plan-strategy-main">
-              <div id="plan-strategy-value" class="total-plan-cost-value">—</div>
+              <select id="plan-strategy-select" class="form-select" aria-label="Strategy">
+                <option value="aggressive">Trade</option>
+                <option value="green">Green</option>
+                <option value="winter">Winter mode</option>
+              </select>
+              <div id="plan-strategy-value" class="plan-strategy-calculating" hidden aria-live="polite"></div>
             </div>
-            <button id="plan-strategy-toggle" class="plan-strategy-toggle" type="button" aria-label="Change strategy" title="Change strategy">⇅</button>
           </div>
         </div>
       </div>
@@ -946,33 +950,46 @@
             <h2 class="sidebar-label">STRATEGY</h2>
           </div>
           <label class="text-sm block">Strategy
-            <select id="strategy-mode" class="form-select" data-settings-input>
+            <select id="strategy-mode" class="form-select" data-settings-input data-no-autosolve>
               <option value="aggressive">Trade</option>
               <option value="green">Green</option>
+              <option value="winter">Winter mode</option>
             </select>
           </label>
-          <div class="mt-4 mb-4">
+          <div id="trade-settings" class="mt-4">
+            <p class="text-xs text-slate-500 dark:text-slate-400">Trade optimizes projected financial return using the all-in buy and sell prices, battery wear, and configured energy costs. It may charge or export battery energy when the forecast economics support it.</p>
+          </div>
+          <div id="green-settings" class="mt-4">
+          <div class="mb-4">
             <h2 class="sidebar-label">GREEN SETTINGS</h2>
           </div>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="text-sm">Buy price percentile (%)
+          <div class="strategy-settings-grid grid grid-cols-2 gap-3">
+            <label class="strategy-setting-label text-sm"><span class="strategy-setting-title">Buy price percentile (%)</span>
               <input id="strategy-buy-percentile" type="number" min="0" max="100" step="1" value="25" class="form-input" data-settings-input />
             </label>
-            <label class="text-sm">Maximum buy safety cap (€/kWh)
+            <label class="strategy-setting-label text-sm"><span class="strategy-setting-title">Maximum buy safety cap (€/kWh)</span>
               <input id="strategy-max-buy-price" type="number" min="0" step="0.00001" value="0.15000" class="form-input" data-settings-input />
             </label>
-            <label class="text-sm">Sell price percentile (%)
+            <label class="strategy-setting-label text-sm"><span class="strategy-setting-title">Sell price percentile (%)</span>
               <input id="strategy-sell-percentile" type="number" min="0" max="100" step="1" value="75" class="form-input" data-settings-input />
             </label>
-            <label class="text-sm">Green export profit margin (%)
+            <label class="strategy-setting-label text-sm"><span class="strategy-setting-title">Green export profit margin (%)</span>
               <input id="green-export-margin" type="number" min="0" max="1000" step="1" value="25" class="form-input" data-settings-input />
             </label>
-            <label class="text-sm">Green grid-import penalty (ct/kWh)
+            <label class="strategy-setting-label text-sm"><span class="strategy-setting-title">Green grid-import penalty (ct/kWh)</span>
               <input id="green-grid-import-penalty" type="number" min="0" step="1" value="1000" class="form-input" data-settings-input />
             </label>
             <p class="col-span-2 text-xs text-slate-500 dark:text-slate-400">Green export margin is added above the next affordable charging price (adjusted for battery efficiency and wear). The import penalty increases the optimizer's preference for PV and battery energy over grid supply.</p>
           </div>
           <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Green calculates rolling price thresholds from the next 24 hours of all-in prices: the buy percentile is capped by Maximum buy safety cap, while battery export must meet the sell percentile and replacement cost plus the configured margin. The reserve protects predicted household use until the next affordable charging slot. PV surplus may always be exported.</p>
+          </div>
+          <div id="winter-settings" class="mt-4 hidden">
+            <h2 class="sidebar-label mb-3">WINTER MODE</h2>
+            <label class="block text-sm">Cheap price percentile (%)
+              <input id="winter-buy-percentile" type="number" min="0" max="100" step="1" value="25" class="form-input" data-settings-input />
+            </label>
+            <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Prices at or below this percentile of the configured forecast horizon qualify as cheap. Winter mode charges the grid battery only in those slots and reserves enough energy to reach the next cheap slot. After the last cheap slot, it targets a full battery. The battery never exports; PV surplus can be exported only when the battery is full.</p>
+          </div>
         </section>
 
         <!-- Home Assistant Settings Card -->
@@ -1064,10 +1081,33 @@
               <span class="toggle-knob"></span>
               <span class="text-sm">Enable multi-threading</span>
             </label>
-            <label class="block text-sm">Maximum threads
-              <input id="solver-max-threads" type="number" min="1" max="64" step="1" value="4" class="form-input" data-settings-input />
-            </label>
-            <p class="text-xs text-slate-500 dark:text-slate-400">When enabled, native HiGHS can use up to the selected number of available CPU threads. When disabled, it uses one thread. The WASM fallback is single-threaded.</p>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="block text-sm">Maximum threads
+                <input id="solver-max-threads" type="number" min="1" max="64" step="1" value="4" class="form-input" data-settings-input />
+                <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">Maximum CPU threads for native HiGHS when multi-threading is enabled. When disabled, it uses one thread; the WASM fallback is single-threaded.</span>
+              </label>
+              <label class="block text-sm">Solver time limit (seconds)
+                <input id="solver-time-limit" type="number" min="1" max="300" step="1" value="30" class="form-input" data-settings-input />
+                <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">Maximum time allowed for each optimizer solve. Default: 30 seconds.</span>
+              </label>
+            </div>
+            <div class="border-t border-slate-200 pt-3 dark:border-white/10">
+              <p class="text-xs text-slate-500 dark:text-slate-400">MIP-gap values are saved separately for Trade, Green, and Winter mode. Normal plan calculations use the active strategy's value; Find optimum uses the selected strategy's value.</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="block text-sm">Find optimum strategy
+                <select id="solver-benchmark-strategy" class="form-select solver-strategy-select" data-settings-input data-no-autosolve>
+                  <option value="aggressive">Trade</option>
+                  <option value="green">Green</option>
+                  <option value="winter">Winter mode</option>
+                </select>
+                <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">Selects the strategy to benchmark and the MIP-gap value shown beside it.</span>
+              </label>
+              <label class="block text-sm">MIP gap (%)
+                <input id="solver-mip-gap" type="number" min="0" max="100" step="0.01" value="2.00" class="form-input" data-settings-input data-no-autosolve />
+                <span class="mt-1 block text-xs text-slate-500 dark:text-slate-400">Lower values seek a closer-to-optimal solution but can take longer. Default: 2.00%.</span>
+              </label>
+            </div>
             <button id="solver-find-optimum" type="button"
               class="w-full rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-wait disabled:opacity-60">
               Find optimum

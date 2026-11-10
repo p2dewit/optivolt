@@ -3,12 +3,17 @@
  */
 
 export type TerminalSocValuation = 'zero' | 'min' | 'avg' | 'max' | 'custom';
-export type Strategy = 'aggressive' | 'green';
+export type Strategy = 'aggressive' | 'green' | 'winter';
 
 export interface GreenSocTarget {
   slot: number;
   soc_Wh: number;
   boundary: 'sunrise' | 'sunset' | 'next-charge';
+}
+
+export interface WinterSocTarget {
+  slot: number;
+  soc_Wh: number;
 }
 
 
@@ -90,6 +95,8 @@ export interface SolverConfig {
   greenSellPriceThresholds_cents_per_kWh?: number[];
   greenExportMargin_percent?: number;
   greenGridImportPenalty_cents_per_kWh?: number;
+  winterCheapPriceThreshold_cents_per_kWh?: number;
+  winterSocTargets?: WinterSocTarget[];
 
   // Battery parameters
   stepSize_m: number;

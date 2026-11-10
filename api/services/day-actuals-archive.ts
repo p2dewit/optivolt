@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readJson, resolveDataDir, writeJson } from './json-store.ts';
 import { getDayActuals } from './day-actuals-service.ts';
+import { loadSettings } from './settings-store.ts';
 
 type DayActuals = Awaited<ReturnType<typeof getDayActuals>>;
 
@@ -37,6 +38,9 @@ function mergeDay(previous: DayActuals | undefined, incoming: DayActuals): DayAc
     const old = oldRows.get(row.timestampMs);
     if (!old) return row;
     const merged = { ...old, ...row };
+    // Keep the recorded strategy when refreshing archived sensor/price data;
+    // historic reconstruction has no reliable way to infer it.
+    merged.strategy = row.strategy ?? old.strategy ?? null;
     const oldGrid = Number(old.gridObservedMinutes) || 0;
     const newGrid = Number(row.gridObservedMinutes) || 0;
     if (newGrid < oldGrid) {
@@ -148,6 +152,15 @@ export async function readArchivedDayActuals(dateKey: string): Promise<DayActual
 export async function fetchAndStoreDayActuals(now = new Date(), dateKey?: string): Promise<DayActuals> {
   const fetched = await getDayActuals(now, dateKey);
   if (fetched.isFuture) return fetched;
+  const currentDateKey = new Intl.DateTimeFormat('en-CA', {
+    timeZone: fetched.timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+  if (fetched.dateKey === currentDateKey) {
+    const settings = await loadSettings();
+    const activeQuarterMs = Math.floor(now.getTime() / (15 * 60_000)) * (15 * 60_000);
+    const activeRow = fetched.rows.find(row => row.timestampMs === activeQuarterMs);
+    if (activeRow) activeRow.strategy = settings.strategy;
+  }
   return storeDayActuals(fetched);
 }
 

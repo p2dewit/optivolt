@@ -133,6 +133,10 @@ export function aggregateRowsHourly(rows, stepSize_m = 15) {
         const sources = new Set(slotRows.map(row => row.source).filter(Boolean));
         out.source = sources.size > 1 ? "mixed" : [...sources][0];
       }
+      for (const key of ["strategy", "actualStrategy", "plannedStrategy"]) {
+        const strategies = new Set(slotRows.map(row => row[key]).filter(Boolean));
+        out[key] = strategies.size > 1 ? "mixed" : [...strategies][0] ?? null;
+      }
       for (const key of ENERGY_MEAN_KEYS) {
         out[key] = slotRows.reduce((sum, r) => sum + (Number(r[key]) || 0), 0) / slotsPerHour;
       }

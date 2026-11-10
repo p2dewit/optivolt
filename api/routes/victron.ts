@@ -2,7 +2,7 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { toHttpError } from '../http-errors.ts';
 import { readVictronDynamicEssMode } from '../services/mqtt-service.ts';
-import { isLastPlanVictronReady } from '../services/planner-service.ts';
+import { getLastPlan, isLastPlanVictronReady } from '../services/planner-service.ts';
 
 const router = express.Router();
 
@@ -16,7 +16,8 @@ router.get('/mode', async (_req: Request, res: Response, next: NextFunction) => 
 });
 
 router.get('/plan-status', (_req: Request, res: Response) => {
-  res.json({ ready: isLastPlanVictronReady() });
+  const plan = getLastPlan();
+  res.json({ ready: isLastPlanVictronReady(), computedAtMs: plan?.computedAtMs ?? null });
 });
 
 export default router;

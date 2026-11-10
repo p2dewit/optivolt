@@ -1,12 +1,32 @@
 import { fetchVictronMode, fetchVictronPlanStatus } from './api/api.js';
 
+const CORRECT_PLAN_STATE_KEY = 'optivolt:correctPlanState';
+
+function readCorrectPlanState() {
+  try {
+    const value = JSON.parse(localStorage.getItem(CORRECT_PLAN_STATE_KEY) || 'null');
+    return value && typeof value.ready === 'boolean'
+      ? { ready: value.ready, computedAtMs: Number.isFinite(value.computedAtMs) ? value.computedAtMs : null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCorrectPlanState(value) {
+  try { localStorage.setItem(CORRECT_PLAN_STATE_KEY, JSON.stringify(value)); }
+  catch { /* localStorage can be disabled; the live indicator still works */ }
+}
+
 export function initVictronModeIndicator(els) {
   if (!els.victronMode) return;
 
   let currentMode = null;
   let checking = true;
-  let planReady = null;
-  let checkingPlan = true;
+  const savedPlanState = readCorrectPlanState();
+  let planReady = savedPlanState?.ready ?? null;
+  let lastPlanComputedAtMs = savedPlanState?.computedAtMs ?? null;
+  let checkingPlan = planReady === null;
   let requestId = 0;
 
   const expectedMode = () =>
@@ -28,7 +48,7 @@ export function initVictronModeIndicator(els) {
     els.victronMode.className = 'w-24 shrink-0 whitespace-nowrap text-right text-sm font-medium text-slate-700 dark:text-slate-300';
 
     if (els.victronPlanStatus) {
-      const planSymbol = checkingPlan ? '…' : planReady ? '✓' : '✗';
+      const planSymbol = planReady === null ? '…' : planReady ? '✓' : '✗';
       const planColor = checkingPlan
         ? 'text-amber-600 dark:text-amber-400'
         : planReady
@@ -58,12 +78,22 @@ export function initVictronModeIndicator(els) {
       const value = modeResult.status === 'fulfilled' ? modeResult.value?.mode : null;
       currentMode = value == null || value === '' ? null : Number(value);
       if (!Number.isFinite(currentMode)) currentMode = null;
-      planReady = planResult.status === 'fulfilled'
-        && planResult.value?.ready === true;
+      if (planResult.status === 'fulfilled') {
+        const computedAtMs = planResult.value?.computedAtMs;
+        const hasComputedPlan = Number.isFinite(computedAtMs);
+        const isNewPlan = hasComputedPlan
+          && (lastPlanComputedAtMs === null || computedAtMs > lastPlanComputedAtMs);
+        if (isNewPlan || (planReady === null && hasComputedPlan)) {
+          lastPlanComputedAtMs = computedAtMs;
+          planReady = planResult.value?.ready === true;
+          writeCorrectPlanState({ ready: planReady, computedAtMs: lastPlanComputedAtMs });
+        }
+      }
     } catch {
       if (id !== requestId) return;
       currentMode = null;
-      planReady = false;
+      // A failed refresh is not a newly computed invalid plan. Preserve the
+      // last known value while the endpoint is temporarily unavailable.
     }
     if (id !== requestId) return;
     checking = false;
@@ -87,6 +117,8 @@ export function initVictronModeIndicator(els) {
     };
     setTimeout(poll, 750);
   });
+
+  window.addEventListener('optivolt:plan-recomputed', () => { void refresh(); });
 
   paint();
   void refresh();

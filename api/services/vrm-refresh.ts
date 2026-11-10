@@ -7,6 +7,7 @@ import { readVictronSocPercent, readVictronSocLimits } from './mqtt-service.ts';
 import type { Data } from '../types.ts';
 import { getVrmCredentials } from '../env.ts';
 import { reconcileForecastAccuracy } from './forecast-accuracy-service.ts';
+import { getEffectiveHorizonDays } from './winter-strategy.ts';
 
 function createClientFromEnv(): VRMClient {
   return new VRMClient(getVrmCredentials());
@@ -71,7 +72,7 @@ export async function refreshSeriesFromVrmAndPersist(): Promise<void> {
   // Extended horizon: ask VRM for extra forecast days and clamp to whatever it
   // actually returns. The prices window stays standard — VRM prices are
   // day-ahead actuals; further days come from the price forecast feed.
-  const extraDays = settings.extendedHorizonDays > 0 ? settings.extendedHorizonDays : 0;
+  const extraDays = getEffectiveHorizonDays(settings);
   const forecastWindow = extraDays > 0 ? windowOptimizationHorizon(extraDays) : {};
 
   // Concurrent IO

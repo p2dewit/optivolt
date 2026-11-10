@@ -194,7 +194,7 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
   const isFuture = dateKey > todayKey;
   const observedEndMs = isFuture ? startMs : Math.min(now.getTime(), endMs);
   const queryEnd = dateKey === todayKey ? observedEndMs : endMs;
-  if (isFuture) return { dateKey, start: start.toISOString(), end: tomorrowStart.toISOString(), observedAt: now.toISOString(), timeZone, isFuture, rows: [], quality: { expectedMs: 0, gridObservedMs: 0, batteryObservedMs: 0, pvObservedMs: 0, chartObservedMs: 0, missingGridMs: 0, missingBatteryMs: 0, missingPvMs: 0, missingImportPriceMs: 0, missingExportPriceMs: 0, pvSensorCount: 0 }, totals: { costs_cents: null, revenue_cents: null, batteryCosts_cents: null, result_cents: null } };
+  if (isFuture) return { dateKey, start: start.toISOString(), end: tomorrowStart.toISOString(), observedAt: now.toISOString(), timeZone, isFuture, rows: [], quality: { expectedMs: 0, gridObservedMs: 0, batteryObservedMs: 0, pvObservedMs: 0, chartObservedMs: 0, missingGridMs: 0, missingBatteryMs: 0, missingPvMs: 0, missingImportPriceMs: 0, missingExportPriceMs: 0, pricedImportMs: 0, pricedExportMs: 0, pvSensorCount: 0 }, totals: { costs_cents: null, revenue_cents: null, batteryCosts_cents: null, result_cents: null } };
   const [raw, priceHistory] = await Promise.all([
     fetchHaStats({
       haUrl: settings.haUrl,
@@ -371,6 +371,9 @@ export async function getDayActuals(now = new Date(), requestedDate?: string) {
     rows.push({
       tIdx: rows.length,
       timestampMs: bucket.timestampMs,
+      // Filled by the archive collector for the active quarter. Historical
+      // strategy cannot be inferred from the current settings.
+      strategy: null as string | null,
       ...flow,
       soc_percent: null,
       ic: bucket.ic,

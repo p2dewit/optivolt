@@ -7,20 +7,25 @@ export function initSolverBenchmark() {
   const button = document.getElementById('solver-find-optimum');
   const status = document.getElementById('solver-benchmark-status');
   const results = document.getElementById('solver-benchmark-results');
-  if (!button || !status || !results) return;
+  const strategySelect = document.getElementById('solver-benchmark-strategy');
+  if (!button || !status || !results || !strategySelect) return;
+
+  const strategyLabel = (strategy) => ({ aggressive: 'Trade', green: 'Green', winter: 'Winter mode' }[strategy] ?? 'Green');
 
   button.addEventListener('click', async () => {
+    const strategy = strategySelect.value;
+    const label = strategyLabel(strategy);
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    status.textContent = 'Preparing the Green model…';
+    status.textContent = `Preparing the ${label} model…`;
     results.replaceChildren();
     results.classList.add('hidden');
     try {
-      let job = await startSolverBenchmark();
+      let job = await startSolverBenchmark(strategy);
       while (job.status === 'running') {
         const progress = job.total == null
-          ? 'Preparing the Green model…'
-          : `Benchmarking Green · ${Math.min(job.completed + 1, job.total)} of ${job.total}: ${job.current ?? 'starting'}…`;
+          ? `Preparing the ${label} model…`
+          : `Benchmarking ${label} · ${Math.min(job.completed + 1, job.total)} of ${job.total}: ${job.current ?? 'starting'}…`;
         status.textContent = progress;
         await sleep(1000);
         job = await fetchSolverBenchmark(job.id);
@@ -37,7 +42,7 @@ export function initSolverBenchmark() {
           : 'feasible solution; configured gap not reached';
         status.textContent = `Recommended: ${threading} · ${seconds(recommendation.elapsedMs)} (${quality}).`;
       } else {
-        status.textContent = job.message || 'No valid Green solution was found.';
+        status.textContent = job.message || `No valid ${label} solution was found.`;
       }
       if (job.message) {
         const note = document.createElement('p');

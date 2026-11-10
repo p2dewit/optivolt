@@ -25,18 +25,12 @@ import { recordSuccessfulVictronPush } from './victron-push-state.ts';
 // How many slots we push into Dynamic ESS
 const DESS_SLOTS = 4;
 let pushedPlanComputedAtMs: number | null = null;
-// Upper bound on a single HiGHS solve, in seconds. Current ~100-slot MILPs
-// solve well under a second; this only kicks in when something degenerates
-// (or once longer horizons multiply the binary count).
-const SOLVE_TIME_LIMIT_S = 30;
+// Default upper bound for every HiGHS solve, in seconds.
+const DEFAULT_SOLVE_TIME_LIMIT_S = 30;
 // Large Green horizons use the proven 2% gap to stay within the solve limit.
 // The native parallel build helps performance but does not guarantee that
 // every hard model will reach a tighter gap in time.
 // Hardware writes still require HiGHS to report Optimal.
-const MIP_REL_GAP = 0.005;
-const MIP_REL_GAP_LARGE = 0.02;
-const MIP_REL_GAP_GREEN = 0.02;
-const LARGE_MILP_SLOTS = 200;
 
 export type { RebalanceWindow };
 
@@ -102,20 +96,21 @@ function attachOriginalPredictionValues(rows: PlanRow[], data: Data): PlanRow[] 
  * Solver options for a config. The solve runs on a worker thread, so a
  * runaway MIP no longer blocks HTTP requests; the time limit still bounds
  * how long a schedule write can be delayed (a limited solve comes back
- * non-Optimal and is refused for hardware writes). Large Green horizons and
- * large EV × rebalance models use a 2% gap.
+ * non-Optimal and is refused for hardware writes). MILP models use the
+ * strategy-specific relative MIP gap supplied by settings.
  */
-export function selectSolveOptions(cfg: SolverConfig): { mip_rel_gap?: number; mip_abs_gap?: number; time_limit: number } {
+export function selectSolveOptions(
+  cfg: SolverConfig,
+  timeLimit_s = DEFAULT_SOLVE_TIME_LIMIT_S,
+  mipGapPercent = 2,
+): { mip_rel_gap?: number; time_limit: number } {
   const hasEv = cfg.ev != null;
   const hasRebalance = (cfg.rebalance?.remainingSlots ?? 0) > 0;
-  const largeGreen = cfg.strategy === 'green' && cfg.load_W.length > LARGE_MILP_SLOTS;
-  if (!hasEv && !hasRebalance && !largeGreen) return { time_limit: SOLVE_TIME_LIMIT_S };
-  const largeMilpCombo = hasEv && hasRebalance && cfg.load_W.length > LARGE_MILP_SLOTS;
-  const mipRelGap = largeGreen ? MIP_REL_GAP_GREEN : largeMilpCombo ? MIP_REL_GAP_LARGE : MIP_REL_GAP;
+  const strategyUsesMilp = cfg.strategy === 'green' || cfg.strategy === 'winter';
+  if (!hasEv && !hasRebalance && !strategyUsesMilp) return { time_limit: timeLimit_s };
   return {
-    mip_rel_gap: mipRelGap,
-    mip_abs_gap: 0.01,
-    time_limit: SOLVE_TIME_LIMIT_S,
+    mip_rel_gap: Math.max(0, Math.min(100, mipGapPercent)) / 100,
+    time_limit: timeLimit_s,
   };
 }
 
@@ -255,7 +250,11 @@ export async function computePlan({ updateData = false } = {}): Promise<ComputeP
 
   const lpText = buildLP(cfg);
   const hasRebalance = (cfg.rebalance?.remainingSlots ?? 0) > 0;
-  const solveOptions = selectSolveOptions(cfg);
+  const solveOptions = selectSolveOptions(
+    cfg,
+    settings.solverTimeLimit_s,
+    settings.solverMipGapPercentByStrategy[cfg.strategy ?? 'aggressive'],
+  );
   // Warm-start hint from the previous plan (#187): consecutive solves differ
   // only marginally, so the previous binary skeleton usually completes to a
   // near-optimal incumbent instantly. Best-effort — a stale or mismatched

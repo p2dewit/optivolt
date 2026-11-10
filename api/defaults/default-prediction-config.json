@@ -28,10 +28,17 @@
   "predictors": [
     {
       "type": "historical",
-      "sensor": "Total Load",
+      "sensor": "Residual Load",
       "lookbackWeeks": 4,
       "dayFilter": "weekday-weekend",
       "aggregation": "mean"
+    },
+    {
+      "type": "temperature",
+      "sensor": "Heat Pump Energy",
+      "lookbackWeeks": 8,
+      "dayFilter": "weekday-weekend",
+      "bins": 4
     }
   ],
   "pvConfig": {

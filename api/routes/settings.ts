@@ -17,6 +17,8 @@ import {
 import type { Settings } from '../types.ts';
 import { isAddon } from '../env.ts';
 import { loadData, saveData } from '../services/data-store.ts';
+import { refreshPriceForecastAndPersist } from '../services/price-forecast-service.ts';
+import { getEffectiveHorizonDays } from '../services/winter-strategy.ts';
 import {
   toAllInExportPrices,
   toAllInImportPrices,
@@ -93,8 +95,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       : false;
 
     let forecastsRefreshed = false;
-    if (savedSettings.extendedHorizonDays !== prevSettings.extendedHorizonDays) {
+    const effectiveHorizonChanged = getEffectiveHorizonDays(savedSettings) !== getEffectiveHorizonDays(prevSettings);
+    const winterActivated = savedSettings.strategy === 'winter' && prevSettings.strategy !== 'winter';
+    if (effectiveHorizonChanged || winterActivated) {
       forecastsRefreshed = await refreshForecastsForNewHorizon(savedSettings);
+      try {
+        await refreshPriceForecastAndPersist();
+      } catch (forecastError) {
+        console.warn('[settings] price forecast refresh after strategy/horizon change failed:',
+          forecastError instanceof Error ? forecastError.message : String(forecastError));
+      }
     }
 
     // Reported so the client can re-read the stored series: the Predictions tab

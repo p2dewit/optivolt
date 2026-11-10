@@ -45,6 +45,10 @@ export const lpVar = {
   startBalance:  makeFamily('start_balance'),
   greenChargeMode: makeFamily('green_charge_mode'),
   greenExportAllowed: makeFamily('green_export_allowed'),
+  winterChargeMode: makeFamily('winter_charge_mode'),
+  winterPvExportAllowed: makeFamily('winter_pv_export_allowed'),
+  winterSocShortfall: makeFamily('winter_soc_shortfall'),
+  pvCurtail: makeFamily('pv_curtail'),
 } as const;
 
 export interface RebalanceWindow {

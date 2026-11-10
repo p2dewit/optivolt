@@ -21,16 +21,16 @@ const NUMERIC_FIELDS: (keyof Settings)[] = [
   'extendedHorizonDays', 'energyTax_eur_per_kWh', 'buyCost_eur_per_kWh',
   'sellCost_eur_per_kWh', 'vat_percent',
   'maximumBuyPrice_eur_per_kWh',
-  'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent',
+  'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent', 'winterBuyPricePercentile_percent',
   'greenExportMargin_percent', 'greenGridImportPenalty_cents_per_kWh',
-  'solverMaxThreads',
+  'solverMaxThreads', 'solverTimeLimit_s',
 ];
 
 // Strictly positive: zero step size, capacities, hold hours, or charge currents are unusable.
 const POSITIVE_FIELDS: (keyof Settings)[] = [
   'stepSize_m', 'batteryCapacity_Wh', 'rebalanceHoldHours',
   'evMinChargeCurrent_A', 'evMaxChargeCurrent_A', 'evBatteryCapacity_kWh',
-  'solverMaxThreads',
+  'solverMaxThreads', 'solverTimeLimit_s',
 ];
 
 // Zero is a valid limit/cost (e.g. no grid export allowed); negative is not.
@@ -38,7 +38,7 @@ const NON_NEGATIVE_FIELDS: (keyof Settings)[] = [
   'maxChargePower_W', 'maxDischargePower_W', 'maxGridImport_W', 'maxGridExport_W',
   'batteryCost_cent_per_kWh', 'idleDrain_W',
   'maximumBuyPrice_eur_per_kWh',
-  'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent',
+  'greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent', 'winterBuyPricePercentile_percent',
   'greenExportMargin_percent', 'greenGridImportPenalty_cents_per_kWh',
 ];
 
@@ -71,6 +71,10 @@ export class SettingsValidationError extends Error {
 }
 
 function validateSettings(s: Settings): Settings {
+  s.solverMipGapPercentByStrategy = Object.assign(
+    { aggressive: 2, green: 2, winter: 2 },
+    s.solverMipGapPercentByStrategy ?? {},
+  );
   for (const field of NUMERIC_FIELDS) {
     if (!Number.isFinite(s[field] as number)) {
       throw new SettingsValidationError(`Invalid numeric setting: ${field}`);
@@ -84,6 +88,9 @@ function validateSettings(s: Settings): Settings {
   if (!Number.isInteger(s.solverMaxThreads) || s.solverMaxThreads > 64) {
     throw new SettingsValidationError('Invalid setting: solverMaxThreads must be an integer from 1 to 64');
   }
+  if (!Number.isInteger(s.solverTimeLimit_s) || s.solverTimeLimit_s > 300) {
+    throw new SettingsValidationError('Invalid setting: solverTimeLimit_s must be an integer from 1 to 300');
+  }
   for (const field of NON_NEGATIVE_FIELDS) {
     if ((s[field] as number) < 0) {
       throw new SettingsValidationError(`Invalid setting: ${field} must be >= 0`);
@@ -92,7 +99,7 @@ function validateSettings(s: Settings): Settings {
   if (s.greenExportMargin_percent > 1000) {
     throw new SettingsValidationError('Invalid setting: greenExportMargin_percent must be <= 1000');
   }
-  for (const field of ['greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent'] as const) {
+  for (const field of ['greenBuyPricePercentile_percent', 'greenSellPricePercentile_percent', 'winterBuyPricePercentile_percent'] as const) {
     if (s[field] > 100) throw new SettingsValidationError(`Invalid setting: ${field} must be <= 100`);
   }
   for (const field of EFFICIENCY_FIELDS) {
@@ -126,8 +133,17 @@ function validateSettings(s: Settings): Settings {
     throw new SettingsValidationError('Invalid setting: liveBlockGuardMode must be off, monitor, or automatic');
   }
 
-  if (s.strategy !== 'aggressive' && s.strategy !== 'green') {
-    throw new SettingsValidationError('Invalid setting: strategy must be aggressive or green');
+  if (s.strategy !== 'aggressive' && s.strategy !== 'green' && s.strategy !== 'winter') {
+    throw new SettingsValidationError('Invalid setting: strategy must be aggressive, green, or winter');
+  }
+  if (s.solverBenchmarkStrategy !== 'aggressive' && s.solverBenchmarkStrategy !== 'green' && s.solverBenchmarkStrategy !== 'winter') {
+    throw new SettingsValidationError('Invalid setting: solverBenchmarkStrategy must be aggressive, green, or winter');
+  }
+  for (const strategy of ['aggressive', 'green', 'winter'] as const) {
+    const gap = s.solverMipGapPercentByStrategy?.[strategy];
+    if (!Number.isFinite(gap) || gap < 0 || gap > 100) {
+      throw new SettingsValidationError(`Invalid setting: solverMipGapPercentByStrategy.${strategy} must be between 0 and 100`);
+    }
   }
 
   if (!TERMINAL_SOC_VALUATIONS.includes(s.terminalSocValuation)) {
@@ -220,7 +236,13 @@ export async function loadSettings(): Promise<Settings> {
     const settings = migrateSettings(await readJson<Partial<Settings>>(SETTINGS_PATH));
     const mergedDataSources = { ...defaults.dataSources, ...settings.dataSources };
     // Math.max: never downgrade a newer on-disk marker (see migrateSettings).
-    return validateSettings({ ...defaults, ...settings, dataSources: mergedDataSources, schemaVersion: Math.max(settings.schemaVersion ?? 0, SETTINGS_SCHEMA_VERSION) });
+    return validateSettings({
+      ...defaults,
+      ...settings,
+      dataSources: mergedDataSources,
+      solverMipGapPercentByStrategy: { ...defaults.solverMipGapPercentByStrategy, ...settings.solverMipGapPercentByStrategy },
+      schemaVersion: Math.max(settings.schemaVersion ?? 0, SETTINGS_SCHEMA_VERSION),
+    });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     return validateSettings({ ...defaults, schemaVersion: SETTINGS_SCHEMA_VERSION });
@@ -231,7 +253,7 @@ export async function loadSettings(): Promise<Settings> {
 function solverSettingsJson(settings: Settings): string {
   const {
     tableShowKwh, tableShowDess, chartViewRange, chartFlowsResolution, chartShowNetRevenue,
-    pushToVictronEnabled, liveBlockGuardMode,
+    pushToVictronEnabled, liveBlockGuardMode, solverBenchmarkStrategy,
     ...inputs
   } = settings;
   return JSON.stringify(inputs);

@@ -78,10 +78,17 @@ export interface Settings {
   maximumBuyPrice_eur_per_kWh: number;
   greenBuyPricePercentile_percent: number;
   greenSellPricePercentile_percent: number;
+  winterBuyPricePercentile_percent: number;
   greenExportMargin_percent: number;
   greenGridImportPenalty_cents_per_kWh: number;
   solverMultiThreadingEnabled: boolean;
   solverMaxThreads: number;
+  /** Maximum duration of each HiGHS solve, in seconds. */
+  solverTimeLimit_s: number;
+  /** Strategy used by Find optimum and to choose the visible per-strategy MIP gap. */
+  solverBenchmarkStrategy: Strategy;
+  /** Relative MIP-gap tolerance (percent), configured separately for each strategy. */
+  solverMipGapPercentByStrategy: Record<Strategy, number>;
 }
 
 // ----------------------------- Persisted data ---------------------------

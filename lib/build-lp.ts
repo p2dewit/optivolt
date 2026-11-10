@@ -17,6 +17,8 @@ export function buildLP({
   greenSellPriceThresholds_cents_per_kWh = [],
   greenExportMargin_percent = 25,
   greenGridImportPenalty_cents_per_kWh = 1000,
+  winterSocTargets = [],
+  winterCheapPriceThreshold_cents_per_kWh = Number.POSITIVE_INFINITY,
 
   // static parameters
   stepSize_m = 15,
@@ -69,6 +71,9 @@ export function buildLP({
   }
   const maxAbsMarketPrice_cents_per_kWh = Math.max(0, ...importPrice.map(price => Math.abs(price)), ...exportPrice.map(price => Math.abs(price)));
   const greenImportPenalty = strategy === 'green' ? greenGridImportPenalty_cents_per_kWh : 0;
+  const winterImportPenalty = strategy === 'winter'
+    ? 2 * maxAbsMarketPrice_cents_per_kWh + batteryCost_cent_per_kWh + 1
+    : 0;
   const greenSocTargetPenalty_cents_per_Wh = strategy === 'green'
     ? (greenImportPenalty + 2 * maxAbsMarketPrice_cents_per_kWh + batteryCost_cent_per_kWh + 1) / 1000
     : 0;
@@ -76,7 +81,9 @@ export function buildLP({
   // minimum when importing to serve load is still feasible.
   const softMinSocPenalty_cents_per_Wh = strategy === 'green'
     ? (greenGridImportPenalty_cents_per_kWh + maxAbsMarketPrice_cents_per_kWh + batteryCost_cent_per_kWh + 1) / 1000
-    : 0.05;
+    : strategy === 'winter'
+      ? (winterImportPenalty + maxAbsMarketPrice_cents_per_kWh + 1) / 1000
+      : 0.05;
   const activeGreenSocTargets = strategy === 'green'
     ? greenSocTargets.filter(target => Number.isInteger(target.slot) && target.slot >= 0 && target.slot < T && Number.isFinite(target.soc_Wh))
     : [];
@@ -90,6 +97,18 @@ export function buildLP({
   );
   const greenChargeMode = lpVar.greenChargeMode.name;
   const greenExportAllowed = lpVar.greenExportAllowed.name;
+  const winterChargeMode = lpVar.winterChargeMode.name;
+  const winterPvExportAllowed = lpVar.winterPvExportAllowed.name;
+  const winterSocShortfall = lpVar.winterSocShortfall.name;
+  const pvCurtail = lpVar.pvCurtail.name;
+  const activeWinterSocTargets = strategy === 'winter'
+    ? winterSocTargets.filter(target => Number.isInteger(target.slot) && target.slot >= 0 && target.slot < T && Number.isFinite(target.soc_Wh))
+    : [];
+  const winterSocShortfallLimit_Wh = activeWinterSocTargets.map(target => Math.max(0, target.soc_Wh));
+  const winterSocTargetPenalty_cents_per_Wh = strategy === 'winter'
+    ? (winterImportPenalty + 2 * maxAbsMarketPrice_cents_per_kWh + batteryCost_cent_per_kWh + 1) / 1000
+    : 0;
+  const winterCheapSlot = (slot: number) => importPrice[slot] <= winterCheapPriceThreshold_cents_per_kWh;
   const greenBuyThresholdAt = (slot: number) => greenBuyPriceThresholds_cents_per_kWh[slot] ?? maximumBuyPrice_cents_per_kWh;
   const greenSellThresholdAt = (slot: number) => greenSellPriceThresholds_cents_per_kWh[slot] ?? minimumSellPrice_cents_per_kWh;
   const nextAffordableSlot = (slot: number): number => {
@@ -194,6 +213,8 @@ export function buildLP({
   };
   const greenChargeModeSlots = new Set<number>();
   const greenExportAllowedSlots = new Set<number>();
+  const winterChargeModeSlots = new Set<number>();
+  const winterPvExportAllowedSlots = new Set<number>();
   if (strategy === 'green') {
     for (let t = 0; t < T; t++) {
       const canCharge = greenGridBatteryUpperBound(t) > 0 || greenPvBatteryUpperBound(t) > 0;
@@ -205,6 +226,18 @@ export function buildLP({
       if (greenTargetIndexBySlot.has(t) && greenBatteryExportUpperBound(t) > 0) {
         greenExportAllowedSlots.add(t);
       }
+    }
+  }
+  if (strategy === 'winter') {
+    for (let t = 0; t < T; t++) {
+      const canGridCharge = winterCheapSlot(t) && Math.min(maxGridImport_W, maxChargePower_W) > 0;
+      const canCharge = canGridCharge || Math.min(Math.max(0, pv_W[t]), maxChargePower_W) > 0;
+      const canDischarge = Math.min(maxDischargePower_W, Math.max(0, load_W[t])) > 0
+        || (evActive && evAvailable[t] && Math.min(maxDischargePower_W, evMaxPow_W) > 0);
+      if (canCharge && canDischarge) winterChargeModeSlots.add(t);
+      const pvSurplus = Math.max(0, pv_W[t] - Math.max(0, load_W[t]));
+      const batteryFullAtStart = t === 0 ? initialSoc_Wh >= maxSoc_Wh - 1e-6 : true;
+      if (pvSurplus > 0 && batteryFullAtStart) winterPvExportAllowedSlots.add(t);
     }
   }
   // SoC deadlines, clamped to in-horizon slots and to battery capacity.
@@ -262,12 +295,16 @@ export function buildLP({
 
     // Aggregate coefficients for each variable
     const greenImportPriority = greenImportPenalty * priceCoeff;
-    const gridToLoadCoeff = importCoeff_cents + greenImportPriority; // import cost plus Green self-sufficiency priority
+    const winterImportPriority = winterImportPenalty * priceCoeff;
+    const gridToLoadCoeff = importCoeff_cents + greenImportPriority + winterImportPriority; // prioritize self-consumption in Green and Winter
     const gridToBatteryCoeff = importCoeff_cents + batteryCost_cents; // import cost + battery cost
     const greenSolarPriority = strategy === 'green'
       ? (Math.max(0, exportPrice[t]) + batteryCost_cent_per_kWh + 1) * priceCoeff
       : 0;
     const pvToGridCoeff = -exportCoeff_cents + greenSolarPriority + TIEBREAK.avoidExport; // prefer storing solar before export
+    const pvCurtailCoeff = strategy === 'winter'
+      ? (batteryCost_cent_per_kWh + 1) * priceCoeff + TIEBREAK.avoidExport
+      : 0;
     const batteryToGridCoeff = -exportCoeff_cents + batteryCost_cents; // export revenue + battery cost
     const batteryToLoadCoeff = batteryCost_cents; // battery cost
     const pvToBatteryCoeff = batteryCost_cents + TIEBREAK.pvToLoad; // battery cost
@@ -280,6 +317,7 @@ export function buildLP({
     if (batteryToGridCoeff !== 0) objTerms.push(` + ${toNum(batteryToGridCoeff)} ${batteryToGrid(t)}`);
     if (batteryToLoadCoeff !== 0) objTerms.push(` + ${toNum(batteryToLoadCoeff)} ${batteryToLoad(t)}`);
     if (pvToBatteryCoeff !== 0) objTerms.push(` + ${toNum(pvToBatteryCoeff)} ${pvToBattery(t)}`);
+    if (strategy === 'winter' && pvCurtailCoeff !== 0) objTerms.push(` + ${toNum(pvCurtailCoeff)} ${pvCurtail(t)}`);
     if (evActive) {
       const gridToEvCoeff = importCoeff_cents + TIEBREAK.preferPvForEv;
       objTerms.push(` + ${toNum(gridToEvCoeff)} ${gridToEv(t)}`);
@@ -293,6 +331,9 @@ export function buildLP({
   // Soft Green reserve targets; unmet targets remain feasible with a penalty.
   for (let i = 0; i < activeGreenSocTargets.length; i++) {
     objTerms.push(` + ${toNum(greenSocTargetPenalty_cents_per_Wh)} ${greenSocShortfall(i)}`);
+  }
+  for (let i = 0; i < activeWinterSocTargets.length; i++) {
+    objTerms.push(` + ${toNum(winterSocTargetPenalty_cents_per_Wh)} ${winterSocShortfall(i)}`);
   }
 
   // Terminal SOC valuation
@@ -338,7 +379,8 @@ export function buildLP({
   // PV split
   for (let t = 0; t < T; t++) {
     const pvEvTerm = evActive ? ` + ${pvToEv(t)}` : '';
-    lines.push(` c_pv_split_${t}: ${pvToLoad(t)} + ${pvToBattery(t)} + ${pvToGrid(t)}${pvEvTerm} = ${pv_W[t]}`);
+    const curtailTerm = strategy === 'winter' ? ` + ${pvCurtail(t)}` : '';
+    lines.push(` c_pv_split_${t}: ${pvToLoad(t)} + ${pvToBattery(t)} + ${pvToGrid(t)}${pvEvTerm}${curtailTerm} = ${pv_W[t]}`);
   }
 
   // SOC evolution (includes idle drain: inverter consumes idleDrain_Wh per slot)
@@ -360,6 +402,10 @@ export function buildLP({
       lines.push(` c_green_charge_mode_${t}: ${gridToBattery(t)} + ${pvToBattery(t)} - ${toNum(maxChargePower_W)} ${greenChargeMode(t)} <= 0`);
       lines.push(` c_green_discharge_mode_${t}: ${batteryToLoad(t)} + ${batteryToGrid(t)}${batEvTerm} + ${toNum(maxDischargePower_W)} ${greenChargeMode(t)} <= ${maxDischargePower_W}`);
     }
+    if (winterChargeModeSlots.has(t)) {
+      lines.push(` c_winter_charge_mode_${t}: ${gridToBattery(t)} + ${pvToBattery(t)} - ${toNum(maxChargePower_W)} ${winterChargeMode(t)} <= 0`);
+      lines.push(` c_winter_discharge_mode_${t}: ${batteryToLoad(t)} + ${batteryToGrid(t)}${batEvTerm} + ${toNum(maxDischargePower_W)} ${winterChargeMode(t)} <= ${maxDischargePower_W}`);
+    }
 
     // Grid import/export limits
     const gridEvTerm = evActive ? ` + ${gridToEv(t)}` : '';
@@ -380,6 +426,22 @@ export function buildLP({
     const reserveBigM = greenReserveShortfallLimit_Wh[targetIndex];
     lines.push(` c_green_export_reserve_${t}: ${targetShortfall} + ${toNum(reserveBigM)} ${greenExportAllowed(t)} <= ${toNum(reserveBigM)}`);
     lines.push(` c_green_export_gate_${t}: ${batteryToGrid(t)} - ${toNum(greenBatteryExportUpperBound(t))} ${greenExportAllowed(t)} <= 0`);
+  }
+  for (let i = 0; i < activeWinterSocTargets.length; i++) {
+    const target = activeWinterSocTargets[i];
+    lines.push(` c_winter_soc_target_${i}: ${soc(target.slot)} + ${winterSocShortfall(i)} >= ${toNum(target.soc_Wh)}`);
+  }
+  for (const t of winterPvExportAllowedSlots) {
+    const surplus = Math.max(0, pv_W[t] - Math.max(0, load_W[t]));
+    lines.push(` c_winter_pv_export_gate_${t}: ${pvToGrid(t)} - ${toNum(Math.min(surplus, maxGridExport_W))} ${winterPvExportAllowed(t)} <= 0`);
+    if (t === 0) {
+      if (initialSoc_Wh < maxSoc_Wh - 1e-6) {
+        lines.push(` c_winter_pv_export_full_${t}: ${winterPvExportAllowed(t)} = 0`);
+      }
+    } else {
+      const fullSocBigM = Math.max(0, maxSoc_Wh);
+      lines.push(` c_winter_pv_export_full_${t}: ${soc(t - 1)} - ${toNum(fullSocBigM)} ${winterPvExportAllowed(t)} >= ${toNum(maxSoc_Wh - fullSocBigM)}`);
+    }
   }
 
   // MILP rebalancing: force a contiguous window of D slots to hold the battery at target SoC
@@ -484,20 +546,27 @@ export function buildLP({
     const maxGridBatteryPower = Math.min(maxGridImport_W, maxChargePower_W);
     const gridBatteryLimit = strategy === 'green'
       ? greenGridBatteryUpperBound(t)
-      : maxGridBatteryPower;
+      : strategy === 'winter'
+        ? (winterCheapSlot(t) ? maxGridBatteryPower : 0)
+        : maxGridBatteryPower;
     lines.push(` 0 <= ${gridToBattery(t)} <= ${toNum(gridBatteryLimit)}`);
 
     // PV splits (no curtailment overall; per-branch caps keep things sane)
     lines.push(` 0 <= ${pvToLoad(t)} <= ${toNum(load_W[t])}`);
     lines.push(` 0 <= ${pvToBattery(t)} <= ${toNum(Math.min(pv_W[t], maxChargePower_W))}`);
     lines.push(` 0 <= ${pvToGrid(t)} <= ${toNum(Math.min(pv_W[t], maxGridExport_W))}`);
+    if (strategy === 'winter') {
+      lines.push(` 0 <= ${pvCurtail(t)} <= ${toNum(Math.max(0, pv_W[t]))}`);
+    }
 
     // Battery → load/grid (cannot exceed discharge or respective sinks)
     lines.push(` 0 <= ${batteryToLoad(t)} <= ${toNum(Math.min(maxDischargePower_W, load_W[t]))}`);
     const maxBatteryExportPower = Math.min(maxDischargePower_W, maxGridExport_W);
-    const batteryExportLimit = strategy === 'green'
-      ? greenBatteryExportUpperBound(t)
-      : maxBatteryExportPower;
+    const batteryExportLimit = strategy === 'winter'
+      ? 0
+      : strategy === 'green'
+        ? greenBatteryExportUpperBound(t)
+        : maxBatteryExportPower;
     lines.push(` 0 <= ${batteryToGrid(t)} <= ${toNum(batteryExportLimit)}`);
 
     // SOC bounds
@@ -515,9 +584,13 @@ export function buildLP({
     lines.push(` ${greenSocShortfall(i)} >= 0`);
     lines.push(` ${greenSocShortfall(i)} <= ${toNum(greenReserveShortfallLimit_Wh[i])}`);
   }
+  for (let i = 0; i < activeWinterSocTargets.length; i++) {
+    lines.push(` ${winterSocShortfall(i)} >= 0`);
+    lines.push(` ${winterSocShortfall(i)} <= ${toNum(winterSocShortfallLimit_Wh[i])}`);
+  }
   lines.push("");
 
-  if (D > 0 || evActive || greenChargeModeSlots.size > 0 || greenExportAllowedSlots.size > 0) {
+  if (D > 0 || evActive || greenChargeModeSlots.size > 0 || greenExportAllowedSlots.size > 0 || winterChargeModeSlots.size > 0 || winterPvExportAllowedSlots.size > 0) {
     lines.push("Binaries");
     if (D > 0) {
       for (let k = 0; k <= KMAX; k++) {
@@ -534,6 +607,12 @@ export function buildLP({
     }
     for (const t of greenExportAllowedSlots) {
       lines.push(` ${greenExportAllowed(t)}`);
+    }
+    for (const t of winterChargeModeSlots) {
+      lines.push(` ${winterChargeMode(t)}`);
+    }
+    for (const t of winterPvExportAllowedSlots) {
+      lines.push(` ${winterPvExportAllowed(t)}`);
     }
     lines.push("");
   }

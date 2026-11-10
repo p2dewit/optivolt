@@ -66,6 +66,15 @@ function makeFlowsTooltip(rows, flowSpecs, h, showNetRevenue = false, cumulative
       const buyPrice = Number.isFinite(row.ic) ? `${row.ic.toFixed(1)}¢` : '—';
       const sellPrice = Number.isFinite(row.ec) ? `${row.ec.toFixed(1)}¢` : '—';
       html += ttPrices(buyPrice, sellPrice);
+      if (row.dayActualsTooltip) {
+        const strategyName = (value) => ({ aggressive: 'Trade', green: 'Green', winter: 'Winter mode', mixed: 'Mixed during this hour' }[value] ?? 'Not recorded');
+        if (row.source === 'mixed') {
+          html += ttRow('#94a3b8', 'Actual strategy', strategyName(row.actualStrategy));
+          html += ttRow('#94a3b8', 'Planned strategy', strategyName(row.plannedStrategy));
+        } else {
+          html += ttRow('#94a3b8', 'Strategy', strategyName(row.strategy));
+        }
+      }
       return html;
     },
   });

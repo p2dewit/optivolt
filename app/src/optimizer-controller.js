@@ -251,7 +251,7 @@ export function createOptimizerController({
     }
 
     const seq = beginPlanRequest();
-    setPlanStrategyCalculating(els, els.strategy?.value === "green");
+    setPlanStrategyCalculating(els, els.strategy?.value === "green" || els.strategy?.value === "winter");
 
     if (els.status) {
       els.status.textContent = "Calculating…";
@@ -303,6 +303,7 @@ export function createOptimizerController({
           result?.victronPushSkippedReason,
         );
         setPlan(result);
+        window.dispatchEvent(new Event("optivolt:plan-recomputed"));
       } catch (renderError) {
         console.error("Failed to render plan", renderError);
         if (els.status) {

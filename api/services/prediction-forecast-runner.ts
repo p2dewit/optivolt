@@ -10,10 +10,11 @@ import { loadSettings } from './settings-store.ts';
 import { applyPredictionAdjustmentsToSeries, pruneExpiredPredictionAdjustments } from './prediction-adjustments.ts';
 import { loadActiveAdjustmentsAndPrune } from './prediction-adjustment-store.ts';
 import { isAddon } from '../env.ts';
+import { getEffectiveHorizonDays } from './winter-strategy.ts';
 
 export async function buildPredictionRunConfig(): Promise<PredictionRunConfig> {
   const [config, settings] = await Promise.all([loadPredictionConfig(), loadSettings()]);
-  return { ...config, haUrl: settings.haUrl, haToken: settings.haToken, extendedHorizonDays: settings.extendedHorizonDays };
+  return { ...config, haUrl: settings.haUrl, haToken: settings.haToken, extendedHorizonDays: getEffectiveHorizonDays(settings) };
 }
 
 export async function executePredictionValidation(config: PredictionRunConfig) {

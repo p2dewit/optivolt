@@ -2,6 +2,7 @@ import { HttpError } from '../http-errors.ts';
 import { extractWindow, extendSeriesWithForecast, getForecastTimeRange, getQuarterStart } from '../../lib/time-series-utils.ts';
 import { buildEvConfig } from './ev-config-builder.ts';
 import { buildGreenPriceThresholds, buildGreenSocTargets } from './green-strategy.ts';
+import { buildWinterCheapPriceThreshold, buildWinterSocTargets, getEffectiveHorizonDays, getWinterHorizonEndMs, WINTER_TRAILING_TOLERANCE_MS } from './winter-strategy.ts';
 import type { SolverConfig, TimeSeries } from '../../lib/types.ts';
 import type { Settings, Data } from '../types.ts';
 
@@ -46,7 +47,8 @@ export function buildSolverConfigFromSettings(
   let importPrice = data.importPrice;
   let exportPrice = data.exportPrice;
   let pricesKnownUntilMs: number | undefined;
-  if (settings.extendedHorizonDays > 0) {
+  const effectiveHorizonDays = getEffectiveHorizonDays(settings);
+  if (effectiveHorizonDays > 0) {
     importPrice = extendSeriesWithForecast(data.importPrice, data.importPriceForecast);
     exportPrice = extendSeriesWithForecast(data.exportPrice, data.exportPriceForecast);
     if (importPrice !== data.importPrice || exportPrice !== data.exportPrice) {
@@ -62,8 +64,36 @@ export function buildSolverConfigFromSettings(
   // truncated when extendedHorizonDays is lowered (and the price forecast is
   // stored in full regardless), so without this the plan would keep running to
   // the end of whatever stale data happens to be persisted.
-  const configuredEndMs = new Date(getForecastTimeRange(nowMs, settings.extendedHorizonDays).endIso).getTime();
-  const endMs = Math.min(loadEndMs, pvEndMs, importEndMs, exportEndMs, configuredEndMs);
+  const dayAheadEndMs = new Date(getForecastTimeRange(nowMs, 0).endIso).getTime();
+  const configuredEndMs = settings.strategy === 'winter'
+    ? effectiveHorizonDays > 0
+      ? getWinterHorizonEndMs(nowMs, effectiveHorizonDays)
+      : dayAheadEndMs
+    : new Date(getForecastTimeRange(nowMs, effectiveHorizonDays).endIso).getTime();
+  if (settings.strategy === 'winter') {
+    const forecastEnds: Array<[string, number]> = [
+      ['load', loadEndMs],
+      ['import prices', importEndMs],
+      ['export prices', exportEndMs],
+    ];
+    // A short tail is acceptable because forecasts can end a few quarters or
+    // hours early. The plan still ends at the last available common slot;
+    // gaps earlier in the series remain invalid.
+    const missing = forecastEnds
+      .filter(([, end]) => end < configuredEndMs - WINTER_TRAILING_TOLERANCE_MS)
+      .map(([name]) => name);
+    if (missing.length) {
+      throw new HttpError(422,
+        `Winter mode needs load and price forecasts covering the configured horizon (up to seven days); up to six hours of missing data at the end is accepted. Missing coverage: ${missing.join(', ')}. Refresh the forecasts and check the configured feeds.`,
+        { details: { requiredEnd: new Date(configuredEndMs).toISOString(), missing } },
+      );
+    }
+  }
+  // PV coverage is intentionally not allowed to shorten Winter's horizon;
+  // unknown PV beyond its feed is zero-filled by extractWindow.
+  const endMs = settings.strategy === 'winter'
+    ? Math.min(loadEndMs, importEndMs, exportEndMs, configuredEndMs)
+    : Math.min(loadEndMs, pvEndMs, importEndMs, exportEndMs, configuredEndMs);
 
   // A series that starts after the plan window begins would be silently
   // zero-padded by extractWindow for the leading slots. Zero PV just means
@@ -143,6 +173,9 @@ export function buildSolverConfigFromSettings(
       maximumBuySafetyCap_cents_per_kWh: settings.maximumBuyPrice_eur_per_kWh * 100,
     })
     : undefined;
+  const winterCheapPriceThreshold = settings.strategy === 'winter'
+    ? buildWinterCheapPriceThreshold(importPriceWindow, settings.winterBuyPricePercentile_percent)
+    : undefined;
 
   const base: SolverConfig = {
     load_W,
@@ -161,6 +194,9 @@ export function buildSolverConfigFromSettings(
     chargeEfficiency_percent:             settings.chargeEfficiency_percent,
     dischargeEfficiency_percent:          settings.dischargeEfficiency_percent,
     strategy: settings.strategy,
+    ...(settings.strategy === 'winter' ? {
+      winterCheapPriceThreshold_cents_per_kWh: winterCheapPriceThreshold!,
+    } : {}),
     maximumBuyPrice_cents_per_kWh: settings.maximumBuyPrice_eur_per_kWh * 100,
     ...(settings.strategy === 'green' ? {
       greenBuyPriceThresholds_cents_per_kWh: greenPriceThresholds!.buy_cents_per_kWh,
@@ -182,6 +218,22 @@ export function buildSolverConfigFromSettings(
       }),
       greenExportMargin_percent: settings.greenExportMargin_percent,
       greenGridImportPenalty_cents_per_kWh: settings.greenGridImportPenalty_cents_per_kWh,
+    } : {}),
+    ...(settings.strategy === 'winter' ? {
+      winterSocTargets: buildWinterSocTargets({
+        load_W,
+        pv_W: pvWindow_W,
+        importPrice_cents_per_kWh: importPriceWindow,
+        cheapPriceThreshold_cents_per_kWh: winterCheapPriceThreshold!,
+        stepSize_m: settings.stepSize_m,
+        batteryCapacity_Wh: settings.batteryCapacity_Wh,
+        minSoc_percent: settings.minSoc_percent,
+        maxSoc_percent: settings.maxSoc_percent,
+        dischargeEfficiency_percent: settings.dischargeEfficiency_percent,
+        chargeEfficiency_percent: settings.chargeEfficiency_percent,
+        maxChargePower_W: settings.maxChargePower_W,
+        idleDrain_W: settings.idleDrain_W,
+      }),
     } : {}),
     batteryCost_cent_per_kWh:             settings.batteryCost_cent_per_kWh,
     idleDrain_W:                          settings.idleDrain_W,

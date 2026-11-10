@@ -47,10 +47,18 @@ export function snapshotUI(els) {
     maximumBuyPrice_eur_per_kWh: num(els.maximumBuyPrice?.value),
     greenBuyPricePercentile_percent: num(els.greenBuyPricePercentile?.value),
     greenSellPricePercentile_percent: num(els.greenSellPricePercentile?.value),
+    winterBuyPricePercentile_percent: num(els.winterBuyPricePercentile?.value),
     greenExportMargin_percent: num(els.greenExportMargin?.value),
     greenGridImportPenalty_cents_per_kWh: num(els.greenGridImportPenalty?.value),
     solverMultiThreadingEnabled: !!els.solverMultiThreadingEnabled?.checked,
     solverMaxThreads: num(els.solverMaxThreads?.value),
+    solverTimeLimit_s: num(els.solverTimeLimit?.value),
+    solverBenchmarkStrategy: els.solverBenchmarkStrategy?.value || "green",
+    solverMipGapPercentByStrategy: {
+      aggressive: num(els.solverMipGap?.dataset.mipGapAggressive ?? (els.solverBenchmarkStrategy?.value === "aggressive" ? els.solverMipGap?.value : undefined) ?? 2),
+      green: num(els.solverMipGap?.dataset.mipGapGreen ?? (els.solverBenchmarkStrategy?.value === "green" ? els.solverMipGap?.value : undefined) ?? 2),
+      winter: num(els.solverMipGap?.dataset.mipGapWinter ?? (els.solverBenchmarkStrategy?.value === "winter" ? els.solverMipGap?.value : undefined) ?? 2),
+    },
 
     // ALGORITHM
     rebalanceEnabled: !!els.rebalanceEnabled?.checked,
@@ -138,12 +146,27 @@ export function hydrateUI(els, obj = {}) {
   setFixedIfDef(els.maximumBuyPrice, obj.maximumBuyPrice_eur_per_kWh, 5);
   setIfDef(els.greenBuyPricePercentile, obj.greenBuyPricePercentile_percent);
   setIfDef(els.greenSellPricePercentile, obj.greenSellPricePercentile_percent);
+  setIfDef(els.winterBuyPricePercentile, obj.winterBuyPricePercentile_percent);
   setIfDef(els.greenExportMargin, obj.greenExportMargin_percent);
   setIfDef(els.greenGridImportPenalty, obj.greenGridImportPenalty_cents_per_kWh);
   if (els.solverMultiThreadingEnabled && obj.solverMultiThreadingEnabled != null) {
     els.solverMultiThreadingEnabled.checked = !!obj.solverMultiThreadingEnabled;
   }
   setIfDef(els.solverMaxThreads, obj.solverMaxThreads);
+  setIfDef(els.solverTimeLimit, obj.solverTimeLimit_s);
+  if (els.solverBenchmarkStrategy && obj.solverBenchmarkStrategy != null) {
+    els.solverBenchmarkStrategy.value = String(obj.solverBenchmarkStrategy);
+  }
+  if (els.solverMipGap) {
+    const gaps = obj.solverMipGapPercentByStrategy || {};
+    els.solverMipGap.dataset.mipGapAggressive = String(gaps.aggressive ?? 2);
+    els.solverMipGap.dataset.mipGapGreen = String(gaps.green ?? 2);
+    els.solverMipGap.dataset.mipGapWinter = String(gaps.winter ?? 2);
+    const strategy = els.solverBenchmarkStrategy?.value || "green";
+    const key = `mipGap${strategy[0].toUpperCase()}${strategy.slice(1)}`;
+    const value = Number(els.solverMipGap.dataset[key] || 2);
+    els.solverMipGap.value = Number.isFinite(value) ? value.toFixed(2) : "2.00";
+  }
   if (els.solverMaxThreads && Number.isInteger(obj.solverCpuLimit) && obj.solverCpuLimit > 0) {
     els.solverMaxThreads.max = String(obj.solverCpuLimit);
   }
@@ -210,13 +233,16 @@ export function updatePlanMeta(els, tsStart, tsEnd) {
 
 // Summary helper
 export function updatePlanStrategyUI(els, strategy = els.strategy?.value) {
+  if (els.planStrategySelect && strategy) els.planStrategySelect.value = strategy;
   if (!els.planStrategy) return;
   const isGreen = strategy === "green";
+  const isWinter = strategy === "winter";
   const isCalculating = els.planStrategy.dataset.calculating === "true";
-  const label = isGreen ? "Green" : "Trade";
-  els.planStrategy.textContent = isCalculating ? `${label} calculating…` : label;
+  const label = isWinter ? "Winter mode" : isGreen ? "Green" : "Trade";
+  els.planStrategy.textContent = isCalculating ? `${label} calculating…` : "";
+  els.planStrategy.hidden = !isCalculating;
   els.planStrategy.classList.toggle("financial-positive", isGreen);
-  els.planStrategy.classList.toggle("financial-negative", !isGreen);
+  els.planStrategy.classList.toggle("financial-negative", !isGreen && !isWinter);
   els.planStrategy.setAttribute("aria-busy", String(isCalculating));
 }
 

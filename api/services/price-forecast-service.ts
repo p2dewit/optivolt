@@ -18,6 +18,7 @@ import { fetchWithTimeout } from '../../lib/fetch-utils.ts';
 import { loadSettings } from './settings-store.ts';
 import { loadData, saveData } from './data-store.ts';
 import { toAllInExportPrices, toAllInImportPrices } from './all-in-prices.ts';
+import { getEffectiveHorizonDays } from './winter-strategy.ts';
 import { reconcileForecastAccuracy, rememberForecastAccuracyCandidates } from './forecast-accuracy-service.ts';
 import type { TimeSeries } from '../types.ts';
 
@@ -170,7 +171,7 @@ export function parsePriceForecastFeed(feed: ForecastFeed): ParsedPriceForecast 
  */
 export async function refreshPriceForecastAndPersist(): Promise<void> {
   const settings = await loadSettings();
-  if (settings.extendedHorizonDays <= 0 || !settings.priceForecastUrl) return;
+  if (getEffectiveHorizonDays(settings) <= 0 || !settings.priceForecastUrl) return;
 
   const feedUrl = new URL(settings.priceForecastUrl);
   let feed: ForecastFeed;

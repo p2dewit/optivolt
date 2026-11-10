@@ -196,6 +196,10 @@ export function initDayActuals(els) {
         timestampMs,
         tIdx: rows.length,
         soc_percent: null,
+        dayActualsTooltip: true,
+        actualStrategy: useActual && actual ? actual.strategy ?? null : null,
+        plannedStrategy: planned ? plan?.strategy ?? null : null,
+        strategy: useActual && actual ? actual.strategy ?? null : planned ? plan?.strategy ?? null : null,
         ...dayActualsTooltipPrices(actual, planned),
       };
       const keys = ['load', 'pv', 'imp', 'exp', 'pv2l', 'pv2b', 'pv2g', 'b2l', 'b2g', 'g2l', 'g2b', 'g2ev', 'pv2ev', 'b2ev'];

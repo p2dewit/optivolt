@@ -29,6 +29,25 @@
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
 }
 
+.solver-strategy-select {
+  height: 2.375rem;
+}
+
+.strategy-setting-label {
+  display: flex;
+  flex-direction: column;
+}
+
+.strategy-setting-title {
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .strategy-setting-title {
+    min-height: 2.5rem;
+  }
+}
+
 .form-input:focus,
 .form-select:focus {
   outline: none;
@@ -650,24 +669,14 @@ body {
   min-width: 0;
 }
 
-.plan-strategy-toggle {
-  flex: none;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 9999px;
-  color: #475569;
-  font-size: 1.15rem;
-  line-height: 1;
+.plan-strategy-calculating {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
-:root.dark .plan-strategy-toggle {
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #cbd5e1;
-}
-
-.plan-strategy-toggle:hover {
-  background: rgba(148, 163, 184, 0.16);
+:root.dark .plan-strategy-calculating {
+  color: #94a3b8;
 }
 
 

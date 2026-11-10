@@ -54,8 +54,16 @@
   "maximumBuyPrice_eur_per_kWh": 0.15,
   "greenBuyPricePercentile_percent": 25,
   "greenSellPricePercentile_percent": 75,
+  "winterBuyPricePercentile_percent": 25,
   "greenExportMargin_percent": 25,
   "greenGridImportPenalty_cents_per_kWh": 1000,
   "solverMultiThreadingEnabled": true,
-  "solverMaxThreads": 4
+  "solverMaxThreads": 4,
+  "solverTimeLimit_s": 30,
+  "solverBenchmarkStrategy": "green",
+  "solverMipGapPercentByStrategy": {
+    "aggressive": 2.0,
+    "green": 2.0,
+    "winter": 2.0
+  }
 }

@@ -8,6 +8,7 @@ import { solveLp } from './solve-runner.ts';
 import { buildLP } from '../../lib/build-lp.ts';
 import { parseSolution } from '../../lib/parse-solution.ts';
 import { HttpError } from '../http-errors.ts';
+import type { Strategy } from '../../lib/types.ts';
 
 type BenchmarkStatus = 'running' | 'completed' | 'failed';
 type BenchmarkRun = {
@@ -24,6 +25,7 @@ type BenchmarkRecommendation = Pick<BenchmarkRun, 'multiThreadingEnabled' | 'max
   & { basis: 'fastest-optimal' | 'fastest-feasible' };
 export interface SolverBenchmarkJob {
   id: string;
+  strategy: Strategy;
   status: BenchmarkStatus;
   phase: 'preparing' | 'solving' | 'complete';
   completed: number;
@@ -54,7 +56,7 @@ function pruneJobs() {
   }
 }
 
-export async function startSolverBenchmark(): Promise<SolverBenchmarkJob> {
+export async function startSolverBenchmark(requestedStrategy?: Strategy): Promise<SolverBenchmarkJob> {
   if ([...jobs.values()].some(job => job.status === 'running')) {
     throw new HttpError(409, 'A solver benchmark is already running. Wait for it to finish before starting another.');
   }
@@ -63,13 +65,16 @@ export async function startSolverBenchmark(): Promise<SolverBenchmarkJob> {
     throw new HttpError(503, 'Find optimum requires the native HiGHS bridge with configurable thread support. Rebuild native/highs before running the benchmark.');
   }
 
+  const inputs = await getSolverInputs();
+  const strategy = requestedStrategy ?? inputs.settings.solverBenchmarkStrategy;
+  const strategyLabel = strategy === 'aggressive' ? 'Trade' : strategy === 'winter' ? 'Winter mode' : 'Green';
   pruneJobs();
   const job: SolverBenchmarkJob = {
-    id: randomUUID(), status: 'running', phase: 'preparing', completed: 0, total: null,
-    current: 'Preparing Green model', runs: [], recommendation: null, message: null, createdAt: Date.now(),
+    id: randomUUID(), strategy, status: 'running', phase: 'preparing', completed: 0, total: null,
+    current: `Preparing ${strategyLabel} model`, runs: [], recommendation: null, message: null, createdAt: Date.now(),
   };
   jobs.set(job.id, job);
-  void runBenchmark(job).catch(error => {
+  void runBenchmark(job, inputs, strategy).catch(error => {
     job.status = 'failed';
     job.phase = 'complete';
     job.current = null;
@@ -83,13 +88,16 @@ export function getSolverBenchmark(id: string): SolverBenchmarkJob | null {
   return job ? publicJob(job) : null;
 }
 
-async function runBenchmark(job: SolverBenchmarkJob): Promise<void> {
-  const inputs = await getSolverInputs();
-  const greenSettings = { ...inputs.settings, strategy: 'green' as const };
+async function runBenchmark(job: SolverBenchmarkJob, inputs: Awaited<ReturnType<typeof getSolverInputs>>, strategy: Strategy): Promise<void> {
+  const benchmarkSettings = { ...inputs.settings, strategy };
   const adjustedData = applyPredictionAdjustmentsToData(inputs.data);
-  const { cfg } = buildSolverConfigFromSettings(greenSettings, adjustedData, inputs.timing.startMs, inputs.evState);
+  const { cfg } = buildSolverConfigFromSettings(benchmarkSettings, adjustedData, inputs.timing.startMs, inputs.evState);
   const lpText = buildLP(cfg);
-  const solveOptions = selectSolveOptions(cfg);
+  const solveOptions = selectSolveOptions(
+    cfg,
+    inputs.settings.solverTimeLimit_s,
+    inputs.settings.solverMipGapPercentByStrategy[strategy],
+  );
   const maxThreads = Math.max(1, Math.min(MAX_THREADS, inputs.settings.solverMaxThreads, availableParallelism()));
   const configurations = [
     { multiThreadingEnabled: false, maxThreads: 1, label: 'Single-threaded' },
@@ -110,7 +118,7 @@ async function runBenchmark(job: SolverBenchmarkJob): Promise<void> {
         maxThreads: config.maxThreads,
       }, () => { startedAt = performance.now(); }, {
         purpose: 'find-optimum',
-        strategy: 'green',
+        strategy,
         horizonDays: inputs.settings.extendedHorizonDays,
         slots: cfg.load_W.length,
         runLabel: config.label,
@@ -153,7 +161,8 @@ async function runBenchmark(job: SolverBenchmarkJob): Promise<void> {
     };
     if (!optimal.length) job.message = 'No configuration proved optimal within the solver time limit; the recommendation is the fastest feasible solution.';
   } else {
-    job.message = 'No configuration produced a valid Green solution.';
+    const strategyLabel = strategy === 'aggressive' ? 'Trade' : strategy === 'winter' ? 'Winter mode' : 'Green';
+    job.message = `No configuration produced a valid ${strategyLabel} solution.`;
   }
   job.status = 'completed';
   job.phase = 'complete';

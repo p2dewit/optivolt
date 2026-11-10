@@ -2,7 +2,7 @@
 
 ## Changes in this fork — OptiVolt DESS
 
-This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **2.1** in the page header identifies the current release.
+This fork is based on [bmesuere/optivolt](https://github.com/bmesuere/optivolt), starting from upstream commit `410a954`. The additions below describe this personal fork. Version **2.2** in the page header identifies the current release.
 
 ## HiGHS 1.15.1 and parallel solving
 
@@ -22,7 +22,7 @@ The **Optimizer** tab is the main overview for planning and operating the home b
 
 ### Strategy and power-flow plans
 
-- **Strategy:** choose the optimization strategy, such as Trade or Green.
+- **Strategy:** choose Trade, Green, or Winter mode. Winter mode uses the configured horizon for prices and load, up to seven days, and includes temperature-sensitive heat-pump use in its load forecast. See [Winter mode](#winter-mode) below for details.
 - **Day Actuals:** review the selected day's realized power flows, with date navigation and chart controls for the time resolution and optional revenue line. The four summary tiles show Revenue, Import Cost, Export Revenue, and Battery Wear Cost. Today can include the planned remainder of the day; past dates show the selected day's stored results.
 - **Optimized Plan:** inspect the calculated power-flow schedule. Choose a 15-minute or hourly view, select the planning horizon, and optionally show the cumulative revenue line. Its summary tiles use the same four measures as Day Actuals.
 
@@ -44,6 +44,7 @@ Battery SoC, Energy Prices (including DA and 2DA reliability indicators), and Pr
 - **New API prices refresh the plan:** saving the settings triggers a new calculation. This automatic recalculation does not write a plan to Victron.
 - **Forecasts from HTTP(S) or a local `file:` source:** the configured forecast feed can extend the horizon beyond known prices. Actual prices remain authoritative. `scripts/fetch_epexprediction.py` can fetch the EPEX forecast directly from EpexPredictor and atomically refresh the local forecast file for an external scheduler.
 - **Trade and Green:** Trade retains the economic optimization. Green derives rolling buy and sell thresholds from the next 24 hours of all-in prices. Grid charging uses the configured buy percentile, capped by the maximum buy safety price. Battery exports must meet the sell percentile and the replacement-energy cost plus the configured profit margin. Green also reserves battery SoC for forecast household demand until the next affordable charging slot, with a configurable grid-import penalty to favor PV and stored energy. Long Green horizons use fewer unnecessary binary decisions and a solver-proven 2% gap to keep calculations within the time limit.
+- **Winter mode:** identifies cheap slots using the configured price percentile over the planning horizon. It uses the temperature-aware load forecast to estimate how much battery energy is needed until the next cheap-price window; after the last cheap window, it targets a full battery. Grid charging is limited to cheap slots. Battery energy is never exported; PV surplus may be exported only when the battery is full. **Extra horizon (days)** controls the forecast horizon (up to seven days); at 0, the standard day-ahead horizon is used. Up to six hours of missing data at the end of the horizon is accepted.
 - **Net returns in the energy chart:** an optional cumulative line showing export revenue minus import costs and calculated battery wear, with euro amounts in the tooltip. This is a planning result, not measured or billed revenue.
 
 ### Live block guard for charging and discharging
